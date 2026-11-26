@@ -18,6 +18,7 @@ export const STATUS = {
   stunned: { n: 'Stunned', c: '#ffe14d', d: 'Cannot act.' },
   poisoned: { n: 'Poisoned', c: '#7bd34a', d: 'Takes poison damage each turn.' },
   oiled: { n: 'Oiled', c: '#9a7a45', d: 'Movement halved. Fire flares up.' },
+  nightsight: { n: 'Nightsight', c: '#b48cff', d: 'Sees in the dark: darkness counts as dim, dim as lit.' },
 };
 const STATUS_IMMUNITY = { burning: 'fire', chilled: 'frost', frozen: 'frost', shocked: 'shock', poisoned: 'poison' };
 
@@ -38,6 +39,7 @@ export function addStatus(G, e, s, turns = 2, o = {}) {
       break;
     case 'wet':
       delete st.burning;
+      if (e.eq?.offhand?.id === 'lit_torch') { e.eq.offhand = { id: 'torch', q: 1 }; G.log(`${e.name}'s torch sputters out.`); G.fx({ type: 'puff', x: e.x, y: e.y }); }
       if (st.chilled) { delete st.chilled; s = 'frozen'; turns = 1; }
       break;
     case 'chilled':
@@ -83,6 +85,7 @@ export const SURF = {
   fire: { n: 'Fire', c: 'rgba(255,110,30,0.45)' },
   ice: { n: 'Ice', c: 'rgba(205,238,255,0.75)' },
   steam: { n: 'Steam', c: 'rgba(235,240,245,0.4)' },
+  smoke: { n: 'Smoke', c: 'rgba(60,60,60,0.6)' },
 };
 const BASE_WATER = Object.freeze({ type: 'water', t: -1, base: true });
 
@@ -107,7 +110,7 @@ function setSurf(G, k, type, t, e = 0) {
   G.state.surfaces[k] = e ? { type, t, e } : { type, t };
 }
 
-const DUR = { water: 6, blood: 6, oil: 7, poison: 5, fire: 3, ice: 4, steam: 3 };
+const DUR = { water: 6, blood: 6, oil: 7, poison: 5, fire: 3, ice: 4, steam: 3, smoke: 4 };
 
 function floodSame(G, x, y, pred, limit) {
   const { map, state } = G;
@@ -148,6 +151,7 @@ export function applyElement(G, x, y, el, o = {}) {
     case 'water':
     case 'blood':
       if (cur === 'fire') { setSurf(G, k, 'steam', DUR.steam); G.fx({ type: 'puff', x, y }); }
+      else if (cur === 'smoke') setSurf(G, k, el, DUR[el]); // water knocks the smoke down
       else if (cur === 'ice' || cur === 'oil') { /* water slides off */ }
       else if (cur === 'water' || cur === 'blood') setSurf(G, k, cur, Math.max(s.t, DUR[cur]), s.e || 0);
       else setSurf(G, k, el, DUR[el]);
@@ -159,6 +163,10 @@ export function applyElement(G, x, y, el, o = {}) {
       if (cur === 'fire') setSurf(G, k, 'fire', DUR.fire + 1);
       else if (cur !== 'ice') setSurf(G, k, 'oil', DUR.oil);
       for (const c of here()) addStatus(G, c, cur === 'fire' ? 'burning' : 'oiled', 2);
+      break;
+    case 'smoke':
+      if (cur !== 'fire') setSurf(G, k, 'smoke', DUR.smoke);
+      G.fx({ type: 'puff', x, y });
       break;
     case 'poison':
       if (cur === 'fire') { poisonBlast(G, x, y); setSurf(G, k, 'fire', DUR.fire); }

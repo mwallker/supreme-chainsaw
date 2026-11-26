@@ -49,6 +49,39 @@ Name, colour, one of four backgrounds, and 3 free attribute points across **Migh
 - Statuses: Wet, Burning, Chilled, Frozen, Shocked, Stunned, Poisoned, Oiled. They interact: Wet + shock → Stunned, Wet/Chilled + frost → Frozen, physical hits shatter Frozen targets for +50%, Oiled + fire → flare-up, water puts out Burning.
 - Downed allies are revived by a healing potion or *Mend*; if everyone falls the party wakes up in the village.
 
+## Light, darkness & accuracy
+
+Attacks and attack spells roll to hit, and **light is a core input**:
+
+| | |
+|---|---|
+| Base | 90% melee, 85% ranged / spells |
+| Finesse | +2% per attacker point above 3, −2% per target point above 3 |
+| Target in **☀ Lit** / **◐ Dim** / **● Dark** | 0 / −15% / −35% |
+| Attacker in darkness, target lit | +10% (unseen) |
+| Target frozen or stunned | +50% |
+| Darkvision (wolves, skeletons, slimes, wisps; *Nightsight Draught*) | treats dark as dim and dim as lit |
+
+The result is clamped to 5–95%.
+
+Every tile's light level is computed from:
+- **Time of day:** day, then dusk, night and dawn (≈10 min of real time per day; combat rounds pass one minute each; resting at a campfire skips the night).
+- **Terrain:** forest canopy and interiors are one step darker.
+- **Light sources:** campfires, forges, burning ground, trees and creatures, glowing imps and wisps, electrified water, and a **lit torch held in the off-hand** (bright 2, dim 5). A torch lights your foes, but it lights you too.
+- **Clouds:** steam caps light at dim; **smoke bombs** create darkness.
+
+It plugs into the element system:
+- Getting Wet (water, rain, wading) puts your torch out.
+- Dousing fires darkens the area.
+- A missed spell still lands on its tile, so a missed firebolt still ignites the oil.
+- Enemies without darkvision prefer well-lit targets.
+
+In the UI:
+- Hovering an enemy shows the hit % with its breakdown.
+- Targeting colours your range by light level.
+- `L` toggles a light-map overlay.
+- The clock and your own light level are on the HUD.
+
 ## Elements & surfaces
 
 Liquids create surfaces; energies transform them. Everything chains:
@@ -81,7 +114,7 @@ Example chains: emberroot → *mortar* → ember paste → coat arrows → shoot
 | Right-click | context menu with every action, including "use item on this" |
 | `1`–`5` | attack / skills, then click a target · `Space` end turn · `Esc` cancel |
 | `I` `C` `P` `N` `H` | inventory, crafting, character, party/connection, help |
-| `Enter` | chat · `WASD` pan · `Q`/`E` or middle-drag rotate camera · `F` recenter · wheel zoom · minimap click to look |
+| `Enter` | chat · `WASD` pan · `Q`/`E` or middle-drag rotate camera · `F` recenter · `L` light map · wheel zoom · minimap click to look |
 
 ## Code layout
 
@@ -92,6 +125,7 @@ js/
              surfaces, damage), crafting.js, interact.js (item→world rules), skills.js, ai.js,
              worldgen.js, map.js (A*, line of sight), entities.js
   net/       transport.js (PeerJS / manual WebRTC / BroadcastChannel + chunking), session.js (host diffing, client replica)
+  sim/light.js  time of day, light sources, per-tile light map, hit chance (shared by host & UI)
   render/    renderer3d.js (Three.js: instanced terrain/trees/rocks/grass, procedural creature & prop models,
              surface layers, flames + pooled point lights, particles, raycast picking, DOM nameplates & floating text)
   ui/        hud.js (panels, drag & drop, context menus, targeting)

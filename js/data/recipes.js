@@ -22,6 +22,8 @@ export const RECIPES = [
   { id: 'fire_bomb', in: { flask_oil: 1, cloth: 1 }, out: ['fire_bomb', 1], hint: 'A flask of oil with a wick.' },
   { id: 'frost_bomb', in: { flask_water: 1, frost_paste: 1 }, out: ['frost_bomb', 1], hint: 'Water and something very cold.' },
   { id: 'shock_bomb', in: { flask_water: 1, storm_paste: 1 }, out: ['shock_bomb', 1], hint: 'Water and something crackling.' },
+  { id: 'nightsight', in: { flask_water: 1, stormcap: 1, nightshade: 1 }, tool: 'mortar', out: ['nightsight', 1], hint: 'A crackling cap and dark berries, ground into water.' },
+  { id: 'smoke_bomb', in: { empty_flask: 1, charcoal: 1, cloth: 1 }, out: ['smoke_bomb', 1], hint: 'Flask, something sooty, a wick.' },
   { id: 'gunpowder', in: { charcoal: 1, sulfur: 1 }, tool: 'mortar', out: ['gunpowder', 2], hint: 'Ground charcoal and a yellow mineral.' },
   { id: 'powder_bomb', in: { empty_flask: 1, gunpowder: 1, cloth: 1 }, out: ['powder_bomb', 1], hint: 'Flask, black powder, wick.' },
   { id: 'spear', in: { stick: 2, flint: 1 }, out: ['spear', 1], hint: 'Two sticks and a sharp stone.' },

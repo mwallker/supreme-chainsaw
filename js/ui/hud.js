@@ -13,6 +13,7 @@ import { findPath, los, walkable, isCreature } from '../sim/map.js';
 import { matchCombination, describeResult, recipeMissing, stackAt, toolName } from '../sim/crafting.js';
 import { applyRulesFor, defaultOptions } from '../sim/interact.js';
 import { esc, cheb, circleTiles } from '../util.js';
+import { hitChance, describeHit, lightAt, LIGHT_NAMES, LIGHT_ICONS, LIGHT_PENALTY, phaseOf, clockText } from '../sim/light.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -139,8 +140,8 @@ export class UI {
       }
     }
     if (this.shop) { const n = S.entities[this.shop]; if (!n || cheb(n.x, n.y, me.x, me.y) > 2) this.hide('shop'); }
-    const nSig = JSON.stringify(S.players);
-    if (nSig !== this.sig.n) { this.sig.n = nSig; if (this.isOpen('net')) this.renderPanel('net'); this.renderNetInfo(); }
+    const nSig = JSON.stringify([S.players, S.time]);
+    if (nSig !== this.sig.n) { this.sig.n = nSig; if (this.isOpen('net')) this.renderPanel('net'); this.renderNetInfo(); this.renderActions(); }
     this.pathCache = null;
   }
 
@@ -189,6 +190,8 @@ export class UI {
     if (this.v.isHost && n.code && n.mode !== 'manual') html = `Room <b>${n.code}</b> · ${html}`;
     else if (this.v.isHost && n.mode === 'manual') html = `Manual invites · ${html}`;
     else html = `Connected · ${html}`;
+    const ph = phaseOf(this.S.time ?? 540);
+    html = `<span data-tip="${esc(`<h4>${ph[0].toUpperCase() + ph.slice(1)}</h4>Day: lit · dawn/dusk: dim · night: dark. Forests and interiors are one step darker. Fires, torches and glowing creatures light their surroundings. Rest at a campfire to skip the night.`)}">${{ day: '☀', dawn: '🌅', dusk: '🌇', night: '☾' }[ph]} ${clockText(this.S.time ?? 540)}</span> · ` + html;
     $('#netinfo').innerHTML = html;
   }
 
@@ -211,8 +214,14 @@ export class UI {
     const ap = $('#apbar');
     if (inC) {
       const act = this.S.entities[this.S.combat.active];
-      ap.innerHTML = `<span class="turn">${mine ? 'Your turn' : esc(act?.name || '…') + "'s turn"}</span>${[...Array(6)].map((_, i) => `<span class="pip ${i < me.ap ? 'on' : ''}"></span>`).join('')}<span>${me.ap} AP · move ${me.mp + me.ap * moveRange(me)} tiles</span>`;
-    } else ap.innerHTML = `<span class="subtle">Exploring — real time. Right-click anything for options.</span>`;
+      ap.innerHTML = `<span class="turn">${mine ? 'Your turn' : esc(act?.name || '…') + "'s turn"}</span>${[...Array(6)].map((_, i) => `<span class="pip ${i < me.ap ? 'on' : ''}"></span>`).join('')}<span>${me.ap} AP · move ${me.mp + me.ap * moveRange(me)} tiles</span>${this.myLightHtml(me)}`;
+    } else ap.innerHTML = `<span class="subtle">Exploring — real time. Right-click anything for options.</span>${this.myLightHtml(me)}`;
+  }
+
+  myLightHtml(me) {
+    const lv = lightAt(this.S, this.v.map, me.x, me.y);
+    const tip = ['You stand in darkness: enemies without darkvision have −35% to hit you, and you get +10% against lit targets.', 'You stand in dim light: enemies have −15% to hit you.', 'You stand in full light: easy to see, easy to hit.'][lv];
+    return `<span data-tip="${esc(tip + ' Press L to show the light map.')}" style="color:${['#9aa6ff', '#d8c99a', '#ffe08a'][lv]}">${LIGHT_ICONS[lv]} ${LIGHT_NAMES[lv]}</span>`;
   }
 
   // ================================================================ inventory
@@ -476,6 +485,12 @@ export class UI {
       <li>Herbs + mortar → pastes. Flask + water → fill at wells, lakes or water barrels. Oil from oil barrels.</li>
       <li>Light the forge (tinderbox / torch), smelt iron ore, forge gear with a hammer. Burn logs on a campfire for charcoal; charcoal + sulfur → gunpowder.</li>
       <li>Anything can be thrown. Flasks shatter into surfaces; bombs combine liquids and elements.</li></ul>
+      <h3>Light, darkness &amp; hitting</h3>
+      <ul><li>Attacks and attack spells roll to hit. Base 90% melee / 85% ranged &amp; spells, ±2% per Finesse point of attacker and target.</li>
+      <li>Every tile is <b>☀ Lit</b>, <b>◐ Dim</b> (−15% to hit anyone there) or <b>● Dark</b> (−35%). Attacking a lit target from darkness gives +10%.</li>
+      <li>Light comes from the time of day (day → dusk → night), campfires, forges, burning ground, trees and creatures, glowing imps and wisps — and a <b>lit torch in your off-hand</b>. Forests and interiors are darker.</li>
+      <li>Water puts out torches and fires. Steam clouds dim the light; <b>smoke bombs</b> make a pool of darkness. Wolves, skeletons, slimes and wisps see in the dark — so can you, with a <b>Nightsight Draught</b>.</li>
+      <li>A missed spell still lands on its tile: a missed firebolt still ignites the oil. Press <kbd>L</kbd> for the light map; targeting colours your range by light.</li></ul>
       <h3>Multiplayer</h3>
       <ul><li>The host's browser simulates the world; up to 3 friends connect directly to it. Share the room code (Online/Local tabs) or exchange codes (Manual).</li>
       <li>Combat pulls in the whole party. Use <kbd>Right-click → Ping</kbd> to mark a spot for friends.</li></ul>
@@ -490,7 +505,8 @@ export class UI {
     if (d.weapon) { const w = d.weapon; L.push(`Weapon: ${w.dmg[0]}-${w.dmg[1]} ${w.type}${w.el ? ' +' + w.el : ''}, range ${w.range}, ${w.ap} AP${w.twoHanded ? ', two-handed' : ''}. Scales with ${w.stat}.`); }
     if (d.armor) L.push(`Armor +${d.armor} (${d.slot})`);
     if (s.d?.coat) L.push(`<span style="color:${COAT[s.d.coat].c}">Coated: ${s.d.coat}${s.d.ch ? ` (${s.d.ch} hits)` : ''}</span>`);
-    if (d.use) L.push(`Use: ${d.use.heal ? `heal ${d.use.heal[0]}-${d.use.heal[1]}` : ''}${d.use.cure ? ` cures ${d.use.cure.join(', ')}` : ''}`);
+    if (d.use) L.push(`Use: ${d.use.heal ? `heal ${d.use.heal[0]}-${d.use.heal[1]}` : ''}${d.use.cure ? ` cures ${d.use.cure.join(', ')}` : ''}${d.use.status ? ` ${STATUS[d.use.status[0]].n} for ${d.use.status[1]} rounds` : ''}`);
+    if (d.light) L.push(`<span style="color:#ffe08a">Light source when held in the off-hand (bright ${d.light[0]}, dim ${d.light[1]})</span>`);
     if (d.throw) { const t = d.throw; L.push(`Throw: ${[t.liquid && t.liquid + ' surface', t.el && t.el, t.dmg && `${t.dmg[0]}-${t.dmg[1]} ${t.type}`, t.heal && 'heals'].filter(Boolean).join(', ')}${t.r ? ` (radius ${t.r})` : ''}`); }
     if (d.coat) L.push(`Coating: combine with a weapon or arrows (${d.coat}).`);
     if (d.tools.length) L.push(`Tool: ${d.tools.map(toolName).join(', ')}`);
@@ -521,7 +537,8 @@ export class UI {
     }
     const s = surfaceAt(v.state, v.map, v.map.idx(x, y));
     if (s && !(s.base && !s.e)) L.push(`<b>${surfaceName(s)}</b>${s.t > 0 ? ` <span class="d">(${s.t} rounds)</span>` : ''}`);
-    L.push(`<span class="d">${TILES[v.map.tile(x, y)].n}${s?.base && !s.e ? ' (water)' : ''}</span>`);
+    const lv = lightAt(v.state, v.map, x, y);
+    L.push(`<span class="d">${TILES[v.map.tile(x, y)].n}${s?.base && !s.e ? ' (water)' : ''}</span> · <span style="color:${['#7f8cff', '#c9b98a', '#ffe08a'][lv]}">${LIGHT_ICONS[lv]} ${LIGHT_NAMES[lv]}${lv < 2 ? ` (${LIGHT_PENALTY[lv]}% to hit targets here)` : ''}</span>`);
     if (this.pathInfo) L.push(this.pathInfo);
     if (this.targetInfo) L.push(this.targetInfo);
     return L.join('<hr style="border:0;border-top:1px solid #5b4a36;margin:4px 0">');
@@ -648,6 +665,15 @@ export class UI {
     this.cancelTargeting();
   }
 
+  hostileAt(x, y) {
+    const at = this.v.index.at.get(this.v.map.idx(x, y)) || [];
+    return at.find((e) => e.kind === 'enemy' && !e.dead);
+  }
+  hitHtml(att, tgt, kind) {
+    const h = hitChance(this.S, this.v.map, att, tgt, kind);
+    const col = h.chance >= 75 ? '#6ee07a' : h.chance >= 50 ? '#f2c94c' : '#ff6b6b';
+    return `<b style="color:${col}">${h.chance}% to hit</b> <span class="d">(${esc(describeHit(h)) || 'no modifiers'})</span>`;
+  }
   /** Called every frame: hover info, path preview, targeting overlay. */
   frame() {
     const me = this.me(), v = this.v;
@@ -664,10 +690,13 @@ export class UI {
         for (let dy = -spec.range; dy <= spec.range; dy++) for (let dx = -spec.range; dx <= spec.range; dx++) range.push([me.x + dx, me.y + dy]);
         const inRange = cheb(me.x, me.y, x, y) <= spec.range;
         const sight = !spec.los || los(v.map, v.index, me.x, me.y, x, y);
-        this.r.overlay = { rangeTiles: range, aoe: circleTiles(x, y, spec.aoe), valid: inRange && sight };
+        this.r.overlay = { rangeTiles: range, aoe: circleTiles(x, y, spec.aoe), valid: inRange && sight, light: true };
         this.ovValid = inRange ? (sight ? '' : 'No line of sight') : 'Out of range';
       }
-      this.targetInfo = this.ovValid ? `<span class="need">${this.ovValid}</span>` : '';
+      const t = this.targeting;
+      const rolls = t.kind === 'attack' || (t.kind === 'skill' && (SKILLS[t.id].attack || t.id === 'aimed_shot'));
+      const foe = rolls && this.hostileAt(x, y);
+      this.targetInfo = (this.ovValid ? `<span class="need">${this.ovValid}</span>` : '') + (foe ? (this.ovValid ? '<br>' : '') + this.hitHtml(me, foe, t.kind === 'skill' && t.id !== 'aimed_shot' ? 'spell' : weaponOf(me).ranged ? 'ranged' : 'melee') : '');
     } else if (this.inCombat() && this.myTurn() && walkable(v.map, v.index, x, y) && !v.index.creatures.has(v.map.idx(x, y))) {
       const key = `${x},${y},${me.x},${me.y},${me.ap},${me.mp}`;
       if (key !== this.ovKey) {
@@ -683,6 +712,10 @@ export class UI {
       }
       this.pathInfo = this.pathPreviewInfo;
     } else if (this.r.overlay) { this.r.overlay = null; this.ovKey = null; }
+    if (!spec && this.canAct()) {
+      const foe = this.hostileAt(x, y);
+      if (foe) this.targetInfo = `Left-click: attack · ${this.hitHtml(me, foe, weaponOf(me).ranged ? 'ranged' : 'melee')}`;
+    }
     if (this.mouseOnCanvas && $('#ctx').classList.contains('hidden')) {
       const k = `${x},${y}`;
       const now = performance.now();
@@ -748,6 +781,7 @@ export class UI {
       else if (k === 'h' || k === '?') this.toggle('help');
       else if (k === 'n') this.toggle('net');
       else if (k === 'f') { this.r.cam.ox = this.r.cam.oy = 0; }
+      else if (k === 'l') { this.r.showLight = !this.r.showLight; this.toast(this.r.showLight ? 'Light map on: blue = dark, grey = dim.' : 'Light map off.', 'info'); }
       else if (k === ' ') { ev.preventDefault(); if (this.inCombat() && this.myTurn()) this.send({ type: 'endTurn' }); }
       else if (k === '+' || k === '=') this.r.cam.zoom = Math.min(2.2, this.r.cam.zoom * 1.1);
       else if (k === '-') this.r.cam.zoom = Math.max(0.5, this.r.cam.zoom / 1.1);

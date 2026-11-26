@@ -102,7 +102,7 @@ export function generateWorld(seed) {
   obj('barrel', cx - 5, cy + 3, { liquid: 'water', hp: 6, uses: 6 });
   obj('chest', cx - 2, cy - 3, { name: 'Village Supply Chest', items: [
     { id: 'iron_axe', q: 1 }, { id: 'pickaxe', q: 1 }, { id: 'hammer', q: 1 }, { id: 'dagger', q: 1 },
-    { id: 'mortar', q: 1 }, { id: 'empty_flask', q: 4 }, { id: 'cloth', q: 3 }, { id: 'stick', q: 4 }] });
+    { id: 'mortar', q: 1 }, { id: 'empty_flask', q: 4 }, { id: 'cloth', q: 3 }, { id: 'stick', q: 4 }, { id: 'torch', q: 3 }, { id: 'nightsight', q: 1 }] });
   obj('chest', cx - 8, cy - 7, { items: [{ id: 'healing_potion', q: 2 }, { id: 'string', q: 3 }, { id: 'feather', q: 4 }, { id: 'gold', q: 10 }] });
   obj('chest', cx + 8, cy - 8, { items: [{ id: 'flask_oil', q: 2 }, { id: 'flint', q: 3 }, { id: 'leather', q: 2 }] });
   obj('crate', cx - 8, cy + 7, { hp: 8, items: [{ id: 'wood', q: 3 }, { id: 'raw_meat', q: 2 }] });

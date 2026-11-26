@@ -13,6 +13,7 @@ import { SKILLS, skillError } from './skills.js';
 import { doCombine, craftRecipe, stackAt } from './crafting.js';
 import { applyRulesFor, makeCtx, defaultOptions, runDefault, useConsumable } from './interact.js';
 import { aiStep } from './ai.js';
+import { hitChance, START_TIME } from './light.js';
 
 const ROUND_MS = 4000;
 
@@ -34,9 +35,10 @@ export class Game {
       const seed = opts.seed ?? Math.floor(Math.random() * 1e9);
       const w = generateWorld(seed);
       this.map = new WorldMap(w.W, w.H, w.tiles);
-      this.state = { seed, nextId: 1, entities: {}, surfaces: {}, combat: null, players: {}, recipes: [...STARTING_RECIPES], spawn: w.spawn, round: 0 };
+      this.state = { seed, nextId: 1, entities: {}, surfaces: {}, combat: null, players: {}, recipes: [...STARTING_RECIPES], spawn: w.spawn, round: 0, time: START_TIME };
       for (const e of w.entities) this.addEnt(e);
     }
+    if (this.state.time == null) this.state.time = START_TIME;
     this.dirtyIndex = true;
     this.lastRound = performance.now();
     this.lastWander = 0;
@@ -254,6 +256,7 @@ export class Game {
     if (idx >= c.order.length) {
       idx = 0;
       c.round++;
+      this.state.time += 1;
       tickSurfaces(this);
       // prune the dead
       c.order = c.order.filter((id) => { const e = this.ent(id); return e && !(e.kind === 'enemy' && e.dead); });
@@ -295,6 +298,16 @@ export class Game {
   }
 
   // ---------- attacks & skills ----------
+  /** Roll to hit a creature; light, finesse and statuses all count. Returns true on hit. */
+  rollHit(e, t, kind, what) {
+    if (!t || !isCreature(t) || t.kind === 'npc') return true;
+    const h = hitChance(this.state, this.map, e, t, kind);
+    const r = Math.random() * 100;
+    if (r < h.chance) return true;
+    this.float(t, 'Miss', '#c9c9c9');
+    this.log(`${e.name}'s ${what} misses ${t.name} (${h.chance}% to hit${h.light < 2 ? ', target in ' + (h.light ? 'dim light' : 'darkness') : ''}).`, 'sys');
+    return false;
+  }
   weaponStrike(e, t, mult) {
     const w = weaponOf(e);
     let ammo = null;
@@ -306,6 +319,7 @@ export class Game {
     }
     if (w.ranged) this.fx({ type: 'proj', fx: e.x, fy: e.y, tx: t.x, ty: t.y, c: (ammo?.d?.coat && { fire: '#ff7a2e', frost: '#9fe3ff', shock: '#f5e663', poison: '#8ee05a', oil: '#8a6d3b' }[ammo.d.coat]) || w.proj || '#ddd' });
     else this.fx({ type: 'swing', x: e.x, y: e.y, tx: t.x, ty: t.y });
+    if (!this.rollHit(e, t, w.ranged ? 'ranged' : 'melee', mult > 1 ? 'aimed shot' : w.n || 'attack')) return null;
     const crit = chance(critChance(e) + (w.crit || 0) / 100);
     const dmg = Math.round(roll(w.dmg) * statMult(e, w.stat) * mult);
     dealDamage(this, t, dmg, w.type || 'physical', e, { crit, noStatus: !w.el });
@@ -338,7 +352,12 @@ export class Game {
   castSkill(e, sk, args) {
     const s = SKILLS[sk.id];
     if (e.kind === 'enemy') e.ap -= s.ap;
-    const res = s.cast(this, e, args);
+    let miss = false;
+    if (s.attack) {
+      const tgt = args.target && isCreature(args.target) ? args.target : this.creaturesAt(args.x, args.y)[0];
+      if (tgt && this.hostile(e, tgt)) miss = !this.rollHit(e, tgt, 'spell', s.n);
+    }
+    const res = s.cast(this, e, { ...args, miss });
     sk.cd = s.cd;
     this.log(`${e.name} uses ${s.n}.`, 'skill');
     return res;
@@ -672,6 +691,7 @@ export class Game {
   }
   realtimeRound() {
     this.state.round++;
+    this.state.time += 10;
     for (const e of Object.values(this.state.entities)) {
       if (!isCreature(e) || e.dead || e.kind === 'npc') continue;
       if (e.kind === 'player' && e.downed) { e.downed = false; e.hp = 1; this.log(`${e.name} comes to.`); continue; }

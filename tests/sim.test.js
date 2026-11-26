@@ -6,6 +6,8 @@ import { surfaceAt } from '../js/sim/rules.js';
 import { matchCombination } from '../js/sim/crafting.js';
 
 import { applyElement } from '../js/sim/rules.js';
+import { lightAt, hitChance, LIT, DIM, DARK, phaseOf } from '../js/sim/light.js';
+import { T } from '../js/data/tiles.js';
 let passed = 0;
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -122,7 +124,9 @@ test('coated weapon applies its element on hit', () => {
   assert.equal(me.eq.weapon.d.coat, 'fire');
   const w = G.addEnt(makeEnemy('wolf', me.x + 1, me.y, 'gq'));
   w.hp = w.maxHp = 200;
+  const rnd = Math.random; Math.random = () => 0.5; // hit, no crit, no blood splash
   G.handleAction('a', { type: 'attack', target: w.id });
+  Math.random = rnd;
   assert.ok(w.st.burning, 'wolf burning');
   assert.equal(me.eq.weapon.d.ch, 3);
 });
@@ -167,6 +171,93 @@ test('frost on water freezes creatures standing in it', () => {
   applyElement(G, x, y, 'frost');
   assert.ok(w.st.frozen, 'wolf frozen');
   assert.equal(surfaceAt(G.state, G.map, G.map.idx(x + 1, y)).type, 'ice');
+});
+
+test('light: day/night, forest canopy, campfire radius', () => {
+  const G = new Game({ seed: 5 });
+  const S = G.state, M = G.map;
+  const fire = Object.values(S.entities).find((e) => e.type === 'campfire' && e.lit);
+  let forest = null;
+  for (let i = 0; i < M.tiles.length && !forest; i++) if (M.tiles[i] === T.FOREST) forest = [i % M.W, (i / M.W) | 0];
+  S.time = 12 * 60;
+  assert.equal(lightAt(S, M, S.spawn.x + 8, S.spawn.y + 8), LIT);
+  assert.equal(lightAt(S, M, forest[0], forest[1]) <= DIM, true, 'forest canopy is dim at noon');
+  S.time = 23 * 60;
+  assert.equal(phaseOf(S.time), 'night');
+  assert.equal(lightAt(S, M, fire.x + 1, fire.y), LIT, 'next to the campfire is lit');
+  assert.equal(lightAt(S, M, fire.x + 5, fire.y), DIM, 'edge of campfire light is dim');
+  assert.equal(lightAt(S, M, fire.x + 9, fire.y), DARK, 'beyond it is dark');
+});
+
+test('light: held torch lights you up, water puts it out, smoke blinds', () => {
+  const G = new Game({ seed: 6 });
+  G.state.time = 1 * 60;
+  const { eid } = G.addPlayer('a', char('ranger'));
+  const me = G.ent(eid);
+  G.place(me, me.x + 12, me.y + 12);
+  const before = lightAt(G.state, G.map, me.x, me.y);
+  me.eq.offhand = { id: 'lit_torch', q: 1 };
+  assert.equal(lightAt(G.state, G.map, me.x + 2, me.y), LIT);
+  assert.ok(lightAt(G.state, G.map, me.x, me.y) > before);
+  applyElement(G, me.x, me.y, 'water');
+  assert.equal(me.eq.offhand.id, 'torch', 'torch doused');
+  G.state.time = 12 * 60;
+  const clear = lightAt(G.state, G.map, me.x + 3, me.y);
+  applyElement(G, me.x + 3, me.y, 'smoke');
+  assert.equal(lightAt(G.state, G.map, me.x + 3, me.y), DARK, 'smoke cloud is dark at noon');
+  applyElement(G, me.x + 3, me.y, 'water');
+  assert.equal(lightAt(G.state, G.map, me.x + 3, me.y), clear, 'water clears the smoke');
+});
+
+test('hit chance: darkness penalty, darkvision, unseen bonus', () => {
+  const G = new Game({ seed: 7 });
+  const { eid } = G.addPlayer('a', char('sellsword'));
+  const me = G.ent(eid);
+  G.place(me, me.x + 15, me.y + 15);
+  const bandit = G.addEnt(makeEnemy('bandit', me.x + 1, me.y, 'gh'));
+  const wolf = G.addEnt(makeEnemy('wolf', me.x, me.y + 1, 'gh'));
+  G.state.time = 12 * 60;
+  const day = hitChance(G.state, G.map, me, bandit).chance;
+  G.state.time = 0;
+  const night = hitChance(G.state, G.map, me, bandit).chance;
+  assert.equal(day - night, 35, 'darkness costs 35%');
+  me.st.nightsight = 5;
+  assert.equal(day - hitChance(G.state, G.map, me, bandit).chance, 15, 'nightsight turns dark into dim');
+  delete me.st.nightsight;
+  assert.equal(hitChance(G.state, G.map, wolf, me).parts.some(([l]) => l.includes('darkvision')), true, 'wolves see in the dark');
+  // attacker in darkness, target 5 tiles away lit by its own burning
+  G.place(bandit, me.x + 5, me.y);
+  bandit.st.burning = 2;
+  const h = hitChance(G.state, G.map, me, bandit);
+  assert.ok(h.parts.some(([l]) => l.includes('unseen')), 'unseen bonus');
+});
+
+test('a missed firebolt still ignites the oil it lands in', () => {
+  const G = new Game({ seed: 9 });
+  const { eid } = G.addPlayer('a', char('elementalist'));
+  const me = G.ent(eid);
+  const b = G.addEnt(makeEnemy('bandit', me.x + 3, me.y, 'gm'));
+  G.state.surfaces[G.map.idx(b.x, b.y)] = { type: 'oil', t: 6 };
+  G.startCombat([b.id], me.id);
+  const rnd = Math.random; Math.random = () => 0.995; // force the miss
+  const hp = b.hp;
+  G.handleAction('a', { type: 'skill', id: 'firebolt', x: b.x, y: b.y, target: b.id });
+  Math.random = rnd;
+  assert.equal(surfaceAt(G.state, G.map, G.map.idx(b.x, b.y)).type, 'fire', 'oil ignited');
+  assert.ok(b.st.burning, 'but the fire still catches the bandit');
+  assert.ok(b.hp <= hp);
+});
+
+test('resting at night skips to morning', () => {
+  const G = new Game({ seed: 10 });
+  const { eid } = G.addPlayer('a', char('sellsword'));
+  const me = G.ent(eid);
+  G.state.time = 22 * 60;
+  const fire = Object.values(G.state.entities).find((e) => e.type === 'campfire' && e.lit);
+  G.place(me, fire.x + 1, fire.y);
+  G.handleAction('a', { type: 'interact', target: fire.id, opt: 'rest' });
+  assert.equal(phaseOf(G.state.time), 'day');
+  assert.ok(G.state.time > 22 * 60);
 });
 
 for (const [name, fn] of tests) {

@@ -45,6 +45,8 @@ export const ITEMS = {
   flask_poison: { n: 'Flask of Poison', i: '⚱', c: '#6fcf3f', stack: 10, v: 6, liquid: 'poison', coat: 'poison', throw: { liquid: 'poison', r: 1 }, d: 'Toxic puddle. Explodes when ignited.' },
   healing_potion: { n: 'Healing Potion', i: '⚗', c: '#e8435a', stack: 10, v: 14, use: { heal: [12, 16], cure: ['poisoned'] }, throw: { heal: [8, 12], r: 1 }, d: 'Drink, use on an ally (revives the downed), or throw it.' },
   antidote: { n: 'Antidote', i: '⚗', c: '#9be36b', stack: 10, v: 8, use: { cure: ['poisoned', 'oiled'], heal: [3, 5] } },
+  nightsight: { n: 'Nightsight Draught', i: '⚗', c: '#b48cff', stack: 10, v: 12, use: { status: ['nightsight', 20], drink: true }, d: 'See in the dark for 20 rounds: darkness counts as dim light, dim as lit.' },
+  smoke_bomb: { n: 'Smoke Bomb', i: '✹', c: '#8a8a8a', stack: 10, v: 8, throw: { liquid: 'smoke', r: 1 }, d: 'A choking cloud. Anyone inside is in darkness: hard to hit, hard to see out of. Water clears it.' },
   bandage: { n: 'Bandage', i: '✚', c: '#f4efe4', stack: 10, v: 4, use: { heal: [6, 8], cure: ['burning'] } },
 
   fire_bomb: { n: 'Firebomb', i: '✹', c: '#ff5a1f', stack: 10, v: 10, throw: { liquid: 'oil', el: 'fire', r: 1, dmg: [4, 7], type: 'fire' }, d: 'Oil and a wick. Bursts into flame.' },
@@ -52,8 +54,9 @@ export const ITEMS = {
   shock_bomb: { n: 'Storm Jar', i: '✹', c: '#f5e663', stack: 10, v: 10, throw: { liquid: 'water', el: 'shock', r: 1, dmg: [3, 6], type: 'shock' }, d: 'Water and lightning in a jar.' },
   powder_bomb: { n: 'Powder Bomb', i: '✺', c: '#e0483a', stack: 10, v: 16, throw: { el: 'fire', r: 2, dmg: [9, 15], type: 'physical', explosion: true }, d: 'Very loud. Very effective.' },
 
-  torch: { n: 'Torch', i: '¡', c: '#a0703a', v: 2, ...W([1, 3], { blunt: true }), d: 'Unlit. Use it on any fire to light it.' },
-  lit_torch: { n: 'Lit Torch', i: '¡', c: '#ffb347', v: 3, tools: ['fire'], ...W([2, 4], { el: 'fire', blunt: true }), throw: { el: 'fire', r: 0, dmg: [2, 4], type: 'fire' }, d: 'A fire source. Hits set things ablaze.' },
+  torch: { n: 'Torch', i: '¡', c: '#a0703a', stack: 5, v: 2, slot: 'offhand', d: 'Unlit. Use it on any fire (or combine with a tinderbox) to light it.' },
+  lit_torch: { n: 'Lit Torch', i: '¡', c: '#ffb347', stack: 5, v: 3, slot: 'offhand', light: [2, 5], tools: ['fire'], throw: { el: 'fire', r: 0, dmg: [2, 4], type: 'fire' },
+    d: 'Hold it in your off-hand: lights the area around you (bright 2, dim 5) — you see your foes, and they see you. Goes out if you get wet. A fire source; throw it to ignite things.' },
   tinderbox: { n: 'Tinderbox', i: '♦', c: '#d1a15a', stack: 1, v: 4, tools: ['fire'], d: 'A fire source. Use it on oil, campfires, forges, enemies...' },
   mortar: { n: 'Mortar & Pestle', i: '⍜', c: '#bcb3a3', stack: 1, v: 8, tools: ['mortar'], d: 'Grinds herbs into pastes and potions.' },
   arrows: { n: 'Arrows', i: '↟', c: '#d9c49a', stack: 99, v: 1, ammo: true },
@@ -99,6 +102,6 @@ export function itemName(s) {
 
 export const SHOP = [
   ['empty_flask', 4], ['flask_water', 5], ['flask_oil', 8], ['cloth', 3], ['string', 2], ['feather', 2],
-  ['arrows', 1], ['torch', 4], ['tinderbox', 6], ['healing_potion', 16], ['iron_ingot', 14], ['mortar', 10],
+  ['arrows', 1], ['torch', 3], ['nightsight', 18], ['tinderbox', 6], ['healing_potion', 16], ['iron_ingot', 14], ['mortar', 10],
 ];
 export const sellPrice = (id) => Math.max(1, Math.floor((ITEMS[id]?.v || 0) / 2));

@@ -4,7 +4,8 @@ import { ITEMS } from '../data/items.js';
 import { OBJECTS, objName } from '../data/objects.js';
 import { T } from '../data/tiles.js';
 import { ri, chance } from '../util.js';
-import { surfaceAt, applyElement, addStatus, heal, damageObject, SURF } from './rules.js';
+import { surfaceAt, applyElement, addStatus, heal, damageObject, SURF, STATUS } from './rules.js';
+import { phaseOf, DAY } from './light.js';
 import { addItem, countItem } from './entities.js';
 import { isCreature } from './map.js';
 
@@ -94,7 +95,11 @@ export const APPLY_RULES = [
   { id: 'ignite_tile', label: 'Ignite ground', match: (c) => isFireSource(c.s) && !c.t && c.surf?.type !== 'fire',
     run(G, c) { applyElement(G, c.x, c.y, 'fire', { ignite: true, src: c.e }); return `${c.e.name} sets the ground alight.`; } },
   { id: 'light_torch', label: 'Light torch', match: (c) => c.s.id === 'torch' && isLitFire(c),
-    run(G, c) { consumeOne(G, c.e, c.s); give(G, c.e, 'lit_torch', 1); return `${c.e.name} lights a torch.`; } },
+    run(G, c) {
+      if (c.e.eq.offhand === c.s) c.e.eq.offhand = { id: 'lit_torch', q: 1 };
+      else { consumeOne(G, c.e, c.s); give(G, c.e, 'lit_torch', 1); }
+      return `${c.e.name} lights a torch.`;
+    } },
   { id: 'cook', label: 'Cook', match: (c) => c.s.id === 'raw_meat' && isLitFire(c) && c.t?.kind === 'object',
     run(G, c) { const n = c.s.q; consumeAll(c.e, c.s); give(G, c.e, 'cooked_meat', n); return `${c.e.name} cooks ${n} meat.`; } },
   { id: 'char', label: 'Burn into charcoal', match: (c) => c.s.id === 'wood' && c.t?.type === 'campfire' && c.t.lit,
@@ -121,6 +126,7 @@ export function useConsumable(G, target, stack, user) {
   const owner = user || target;
   consumeOne(G, owner, stack);
   if (u.heal) heal(G, target, ri(u.heal[0], u.heal[1]));
+  if (u.status) { target.st[u.status[0]] = u.status[1]; G.float(target, STATUS[u.status[0]].n, STATUS[u.status[0]].c); }
   for (const s of u.cure || []) delete target.st[s];
   if (u.risk && chance(0.35)) { addStatus(G, target, u.risk, 2); G.log(`${target.name} feels sick...`, 'bad'); }
   if (u.returns) give(G, owner, u.returns, 1);
@@ -176,6 +182,11 @@ export function runDefault(G, pid, e, t, opt) {
       if (G.state.combat) return G.tell(pid, "You can't rest during combat.");
       for (const p of G.players()) if (Math.max(Math.abs(p.x - t.x), Math.abs(p.y - t.y)) <= 4) { p.downed = false; p.hp = p.maxHp; p.st = {}; G.float(p, 'Rested', '#6ee07a'); }
       G.log(`${e.name} rests by the fire. Everyone nearby recovers.`, 'good');
+      if (phaseOf(G.state.time) === 'night' || phaseOf(G.state.time) === 'dusk') {
+        const base = Math.floor(G.state.time / 1440) * 1440, m = G.state.time - base;
+        G.state.time = m < DAY ? base + DAY : base + 1440 + DAY;
+        G.log('The night passes. Dawn breaks over the village.', 'sys');
+      }
       return;
     case 'smash':
       if (G.inCombat(e)) return G.attack(pid, e, t);

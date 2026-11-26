@@ -5,6 +5,7 @@ import { weaponOf, moveRange } from './entities.js';
 import { findPath, los } from './map.js';
 import { surfaceAt } from './rules.js';
 import { cheb, chance } from '../util.js';
+import { lightMap } from './light.js';
 
 export function aiStep(G, e) {
   const r = G.rtOf(e.id);
@@ -16,7 +17,10 @@ export function aiStep(G, e) {
   const { map } = G;
   const index = G.index;
   const sees = (f) => los(map, index, e.x, e.y, f.x, f.y);
-  foes.sort((a, b) => cheb(e.x, e.y, a.x, a.y) + a.hp / 8 - (cheb(e.x, e.y, b.x, b.y) + b.hp / 8));
+  // prefer close, weak and well-lit targets (unless we see in the dark)
+  const L = lightMap(G.state, map), dv = !!def.darkvision;
+  const score = (f) => cheb(e.x, e.y, f.x, f.y) + f.hp / 8 + (dv ? 0 : (2 - L[map.idx(f.x, f.y)]) * 1.5);
+  foes.sort((a, b) => score(a) - score(b));
 
   // 1) skills
   for (const sk of e.skills) {

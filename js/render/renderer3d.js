@@ -8,6 +8,7 @@ import { ENEMIES } from '../data/enemies.js';
 import { STATUS, surfaceAt } from '../sim/rules.js';
 import { hash } from '../rng.js';
 import { esc } from '../util.js';
+import { lightMap, daylight } from '../sim/light.js';
 
 const TILE_H = { [T.DEEP]: -0.6, [T.SHALLOW]: -0.24, [T.SAND]: 0.0, [T.GRASS]: 0.05, [T.FOREST]: 0.07, [T.DIRT]: 0.03, [T.ROCKY]: 0.18, [T.MOUNTAIN]: 1.4, [T.FLOOR]: 0.1, [T.WALL]: 1.05 };
 const TILE_COL = { [T.WALL]: '#857a6c', [T.MOUNTAIN]: '#6d665d', [T.FLOOR]: '#8a6440' };
@@ -92,7 +93,7 @@ export class Renderer {
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
     this.lights = [];
-    for (let i = 0; i < 6; i++) { const l = new THREE.PointLight('#ff9a40', 0, 7, 1.6); this.scene.add(l); this.lights.push(l); }
+    for (let i = 0; i < 8; i++) { const l = new THREE.PointLight('#ff9a40', 0, 8, 1.5); this.scene.add(l); this.lights.push(l); }
     this.flash = new THREE.PointLight('#ffcf80', 0, 10, 1.5);
     this.scene.add(this.flash);
     this.raycaster = new THREE.Raycaster();
@@ -152,7 +153,9 @@ export class Renderer {
       flame: P(new THREE.ConeGeometry(0.11, 0.5, 6).translate(0, 0.25, 0), basic('#ffffff', { transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false }), 2500, { shadow: false }),
       steam: P(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshLambertMaterial({ color: '#f2f6f8', transparent: true, opacity: 0.45, depthWrite: false }), 800, { shadow: false }),
       elec: P(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), basic('#f5d020', { transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }), 1200, { shadow: false }),
-      range: P(new THREE.PlaneGeometry(0.94, 0.94).rotateX(-Math.PI / 2), basic('#ffffff', { transparent: true, opacity: 0.09, depthWrite: false }), 800, { shadow: false }),
+      range: P(new THREE.PlaneGeometry(0.94, 0.94).rotateX(-Math.PI / 2), basic('#ffffff', { transparent: true, opacity: 0.22, depthWrite: false }), 800, { shadow: false }),
+      lightOv: P(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), basic('#ffffff', { transparent: true, opacity: 0.4, depthWrite: false }), 4000, { shadow: false }),
+      smoke: P(new THREE.SphereGeometry(0.42, 8, 6), new THREE.MeshLambertMaterial({ color: '#3d3b38', transparent: true, opacity: 0.72, depthWrite: false }), 800, { shadow: false }),
       aoe: P(new THREE.PlaneGeometry(0.94, 0.94).rotateX(-Math.PI / 2), basic('#ffc850', { transparent: true, opacity: 0.42, depthWrite: false }), 100, { shadow: false }),
       path: P(new THREE.CylinderGeometry(0.09, 0.09, 0.04, 10), basic('#ffffff'), 300, { shadow: false }),
     };
@@ -304,18 +307,20 @@ export class Renderer {
   rebuildSurfaces(S) {
     const map = this.view.map;
     for (const p of Object.values(this.surf)) p.begin();
-    this.p.steam.begin(); this.p.elec.begin();
+    this.p.steam.begin(); this.p.elec.begin(); this.p.smoke.begin();
     this.fireTiles = [];
     for (const [k, s] of Object.entries(S.surfaces)) {
       const x = k % map.W, y = (k / map.W) | 0, sy = this.surfY(x, y);
-      if (s.type === 'steam') {
+      if (s.type === 'smoke') {
+        for (let i = 0; i < 3; i++) this.p.smoke.add(x + 0.25 + hash(x, y, i) * 0.5, sy + 0.3 + i * 0.35, y + 0.25 + hash(x, y, i + 3) * 0.5, 1 + i * 0.25, 0.85, 1 + i * 0.25, hash(x, y, i + 7) * 6);
+      } else if (s.type === 'steam') {
         for (let i = 0; i < 2; i++) this.p.steam.add(x + 0.3 + hash(x, y, i) * 0.4, sy + 0.35 + i * 0.3, y + 0.3 + hash(x, y, i + 3) * 0.4, 1 + i * 0.3, 0.8, 1 + i * 0.3);
       } else if (this.surf[s.type]) this.surf[s.type].add(x + 0.5, sy + (s.type === 'ice' ? 0.01 : 0), y + 0.5);
       if (s.e) this.p.elec.add(x + 0.5, sy + 0.02, y + 0.5);
       if (s.type === 'fire') this.fireTiles.push([x, y]);
     }
     for (const p of Object.values(this.surf)) p.end();
-    this.p.steam.end(); this.p.elec.end();
+    this.p.steam.end(); this.p.elec.end(); this.p.smoke.end();
   }
 
   // ------------------------------------------------------------ creatures
@@ -329,7 +334,7 @@ export class Renderer {
       const p = this.rpos.get(e.id) || e;
       if (Math.abs(p.x - tx) > 45 || Math.abs(p.y - ty) > 45) continue;
       seen.add(e.id);
-      const key = [e.type, e.cls, e.color].join('|');
+      const key = [e.type, e.cls, e.color, e.eq?.offhand?.id].join('|');
       let r = this.creatures.get(e.id);
       if (!r || r.key !== key) {
         if (r) this.scene.remove(r.g);
@@ -389,7 +394,13 @@ export class Renderer {
           for (let i = 0; i < 3; i++) flame(e.x + 0.38 + i * 0.12, y, e.y + 0.45 + (i % 2) * 0.1, e.type === 'forge' ? 0.7 : 1.3, i);
           lightCands.push([e.x + 0.5, y + 0.6, e.y + 0.5, 1.3]);
         }
-      } else if (e.st?.burning && !e.dead) {
+      } else if (e.eq?.offhand?.id === 'lit_torch' && !e.dead && this.creatures.has(e.id)) {
+        const r = this.creatures.get(e.id);
+        V.set(-0.3, 0.98, 0.12).applyEuler(r.g.rotation).add(r.g.position);
+        flame(V.x, V.y, V.z, 0.75, 1);
+        lightCands.push([V.x, V.y + 0.3, V.z, 1.1, e.id]);
+      }
+      if (e.kind !== 'object' && e.st?.burning && !e.dead) {
         const p = this.rpos.get(e.id) || e;
         const y = this.gy(p.x + 0.5, p.y + 0.5);
         for (let i = 0; i < 3; i++) flame(p.x + 0.35 + i * 0.15, y + 0.4 + (i % 2) * 0.2, p.y + 0.5, 1.1, i);
@@ -408,7 +419,9 @@ export class Renderer {
     this.lights.forEach((l, i) => {
       const c = this.lightSrc?.[i];
       if (!c) { l.intensity = 0; return; }
-      l.position.set(c[0], c[1], c[2]);
+      const carrier = c[4] && this.creatures.get(c[4]);
+      if (carrier) l.position.copy(V.set(-0.3, 1.25, 0.12).applyEuler(carrier.g.rotation).add(carrier.g.position));
+      else l.position.set(c[0], c[1], c[2]);
       l.intensity = (4 + Math.sin(t * 13 + i) * 0.8 + Math.sin(t * 7.3 + i * 2) * 0.6) * c[3];
     });
     // electricity flicker
@@ -422,7 +435,8 @@ export class Renderer {
     this.lastOv = ov;
     const { range, aoe, path } = this.p;
     range.begin(); aoe.begin(); path.begin();
-    if (ov?.rangeTiles) for (const [x, y] of ov.rangeTiles) if (this.view.map.inb(x, y)) range.add(x + 0.5, this.surfY(x, y) + 0.02, y + 0.5);
+    const L = ov?.light ? lightMap(this.view.state, this.view.map) : null;
+    if (ov?.rangeTiles) for (const [x, y] of ov.rangeTiles) if (this.view.map.inb(x, y)) range.add(x + 0.5, this.surfY(x, y) + 0.02, y + 0.5, 1, 1, 1, 0, L ? ['#2a3cff', '#8a94b8', '#fff2c0'][L[this.view.map.idx(x, y)]] : '#ffffff');
     if (ov?.aoe) for (const [x, y] of ov.aoe) if (this.view.map.inb(x, y)) aoe.add(x + 0.5, this.surfY(x, y) + 0.03, y + 0.5);
     aoe.mesh.material.color.set(ov?.valid === false ? '#ff4040' : '#ffc850');
     if (ov?.path) ov.path.forEach(([x, y], i) => path.add(x + 0.5, this.surfY(x, y) + 0.03, y + 0.5, i === ov.path.length - 1 ? 1.8 : 1, 1, i === ov.path.length - 1 ? 1.8 : 1, 0, i < ov.reach ? '#78e68c' : '#ff5a5a'));
@@ -681,9 +695,26 @@ export class Renderer {
     // combat mood
     const inCombat = !!S.combat;
     this.cv.parentElement.classList.toggle('in-combat', inCombat);
-    const targetSky = inCombat ? '#a39a96' : '#9bb7c9';
-    this.scene.background.lerp(C.set(targetSky), Math.min(1, dt * 2));
+    const dl = daylight(S.time ?? 540);
+    const sky = new THREE.Color('#0b1220').lerp(new THREE.Color(inCombat ? '#a39a96' : '#9bb7c9'), dl).lerp(new THREE.Color('#c9825a'), 4 * dl * (1 - dl) * 0.55);
+    this.scene.background.lerp(sky, Math.min(1, dt * 2));
     this.scene.fog.color.copy(this.scene.background);
+    this.sun.intensity = 0.45 + 2.15 * dl;
+    this.sun.color.set('#7f98ff').lerp(C.set('#fff0d8'), dl).lerp(C.set('#ffad6b'), 4 * dl * (1 - dl) * 0.6);
+    this.hemi.intensity = 0.55 + 0.95 * dl;
+    this.hemi.color.set('#5a6c9a').lerp(C.set('#dfeaff'), dl);
+    this.gl.toneMappingExposure = 0.95 + 0.1 * dl;
+    if (this.showLight && now - (this.lightOvT || 0) > 300) {
+      this.lightOvT = now;
+      const L = lightMap(S, v.map), lo = this.p.lightOv;
+      lo.begin();
+      for (let y = Math.max(0, Math.floor(this.cam.y) - 24); y < Math.min(v.map.H, this.cam.y + 24); y++)
+        for (let x = Math.max(0, Math.floor(this.cam.x) - 24); x < Math.min(v.map.W, this.cam.x + 24); x++) {
+          const l = L[v.map.idx(x, y)];
+          if (l < 2 && v.map.tilePass(x, y)) lo.add(x + 0.5, this.surfY(x, y) + 0.015, y + 0.5, 1, 1, 1, 0, l ? '#5a6488' : '#1a2a9a');
+        }
+      lo.end();
+    } else if (!this.showLight && this.p.lightOv.mesh.count) { this.p.lightOv.begin(); this.p.lightOv.end(); }
 
     if (now - this.lastScan > 250) {
       this.lastScan = now;
@@ -756,7 +787,10 @@ function buildCreature(e) {
   const r = { g, inner, h: 1.1, float: false, squash: false };
   if (e.kind === 'player') {
     humanoid(inner, { body: e.color, robe: e.cls === 'elementalist' });
-    if (e.cls === 'sellsword') { sword(inner); inner.add(mesh(G.shield, lam('#8a5a30'), -0.32, 0.6, 0.05, Math.PI / 2, 0, 0.1)); }
+    if (e.cls === 'sellsword') sword(inner);
+    const off = e.eq?.offhand?.id;
+    if (off === 'wooden_shield' || off === 'iron_shield') inner.add(mesh(G.shield, lam(off === 'iron_shield' ? '#b9c0c6' : '#8a5a30'), -0.32, 0.6, 0.05, Math.PI / 2, 0, 0.1));
+    if (off === 'torch' || off === 'lit_torch') inner.add(mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.5, 6), lam('#6b4526'), -0.3, 0.75, 0.12, 0.25, 0, 0), mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.08, 6), lam(off === 'lit_torch' ? '#3a2a1a' : '#d9cfb8'), -0.3, 0.99, 0.12));
     if (e.cls === 'ranger') { bow(inner); inner.add(mesh(G.hood, lam('#3e5a2e'), 0, 1.12, 0)); inner.add(mesh(G.pack, lam('#6b4a2a'), 0, 0.62, -0.2)); }
     if (e.cls === 'alchemist') { inner.add(mesh(G.pack, lam('#6b4a2a'), 0, 0.62, -0.2)); ['#e8435a', '#6fcf3f', '#ff9a2e'].forEach((c, i) => inner.add(mesh(G.flask, basic(c), -0.12 + i * 0.12, 0.4, 0.22))); }
     if (e.cls === 'elementalist') { staff(inner, '#c3a6ff'); inner.add(mesh(G.hood, lam('#2c2a48'), 0, 1.15, 0, 0, 0, 0)); }
