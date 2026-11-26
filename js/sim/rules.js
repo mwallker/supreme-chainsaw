@@ -18,6 +18,7 @@ export const STATUS = {
   stunned: { n: 'Stunned', c: '#ffe14d', d: 'Cannot act.' },
   poisoned: { n: 'Poisoned', c: '#7bd34a', d: 'Takes poison damage each turn.' },
   oiled: { n: 'Oiled', c: '#9a7a45', d: 'Movement halved. Fire flares up.' },
+  resolute: { n: 'Resolute', c: '#d9c3a0', d: 'Just shook off a stun or freeze: immune to both for now.' },
   nightsight: { n: 'Nightsight', c: '#b48cff', d: 'Sees in the dark: darkness counts as dim, dim as lit.' },
 };
 const STATUS_IMMUNITY = { burning: 'fire', chilled: 'frost', frozen: 'frost', shocked: 'shock', poisoned: 'poison' };
@@ -54,7 +55,16 @@ export function addStatus(G, e, s, turns = 2, o = {}) {
       break;
   }
   if (s === 'frozen' || s === 'stunned') {
+    if (st.resolute) { G.float(e, 'Resisted', '#d9c3a0'); return; }
     if (!st[s]) G.float(e, STATUS[s].n + '!', STATUS[s].c);
+    if (G.state.combat?.active === e.id) {
+      // stunned/frozen mid-turn: the rest of this turn is lost (and the status is spent)
+      st.resolute = 2;
+      G.log(`${e.name} is ${s} and loses the rest of the turn.`);
+      const r = G.rtOf(e.id); r.path = []; r.queued = null;
+      G.later(500, () => G.endTurn(e.id));
+      return;
+    }
   }
   st[s] = Math.max(st[s] || 0, turns);
 }
@@ -313,6 +323,7 @@ const DMG_COLOR = { physical: '#ffffff', fire: '#ff8a3d', frost: '#9fe3ff', shoc
 
 export function dealDamage(G, t, amount, type, src, o = {}) {
   if (!t || t.dead) return 0;
+  if (src?.dm && !o.dot) amount *= src.dm; // per-encounter enemy damage tuning
   if (t.kind === 'object') return damageObject(G, t, amount, type);
   if (!isCreature(t) || t.downed || t.kind === 'npc') return 0;
   const res = resistOf(t, type);

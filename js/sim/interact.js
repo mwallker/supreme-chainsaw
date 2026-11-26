@@ -158,6 +158,7 @@ export function defaultOptions(state, e, t) {
       case 'forge': case 'workbench': case 'alchemy': o.push({ id: 'craft', label: 'Craft here' }); break;
       case 'barrel': case 'crate': o.push({ id: 'smash', label: 'Smash' }); break;
     }
+    if (t.type === 'exit') o.push({ id: 'travel', label: 'Travel onward (whole party)' });
   } else if (t.kind === 'npc') o.push({ id: 'trade', label: 'Trade' });
   else if (t.kind === 'enemy' && t.dead && t.items?.length) o.push({ id: 'open', label: 'Loot' });
   else if (t.kind === 'enemy' && !t.dead) o.push({ id: 'attack', label: 'Attack' });
@@ -195,6 +196,7 @@ export function runDefault(G, pid, e, t, opt) {
     case 'craft': return G.tell(pid, { open: 'craft' });
     case 'trade': return G.tell(pid, { open: 'shop', id: t.id });
     case 'attack': return G.attack(pid, e, t);
+    case 'travel': return G.travel(pid, e);
   }
 }
 export { SURF, countItem };

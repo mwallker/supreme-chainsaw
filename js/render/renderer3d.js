@@ -194,6 +194,20 @@ export class Renderer {
     this.plates = new Map();
     this.floats = [];
   }
+  /** New level (new map): drop everything map-specific and rebuild. */
+  resetWorld() {
+    for (const m of [this.terrain, this.water]) if (m) { this.scene.remove(m); m.geometry.dispose(); }
+    for (const r of this.creatures.values()) this.scene.remove(r.g);
+    for (const r of this.dyn.values()) this.scene.remove(r.g);
+    for (const pl of this.plates.values()) pl.d.remove();
+    this.creatures.clear(); this.dyn.clear(); this.plates.clear(); this.rpos.clear();
+    this.staticSig = this.surfSig = null; this.lastOv = undefined; this.fireTiles = [];
+    this.cam.ox = this.cam.oy = 0;
+    this.builtMap = this.view.map;
+    this.buildTerrain();
+    const me = this.view.state.entities[this.view.myEid];
+    if (me) { this.cam.x = me.x + 0.5; this.cam.y = me.y + 0.5; }
+  }
   buildTerrain() {
     const map = this.view.map, W = map.W, H = map.H;
     this.hts = new Float32Array(W * H);
@@ -252,19 +266,24 @@ export class Renderer {
     for (const e of Object.values(S.entities)) {
       if (e.kind !== 'object' || STATIC.has(e.type)) continue;
       seen.add(e.id);
-      const key = [e.type, e.lit, e.liquid, e.locked, e.items?.[0]?.id].join('|');
+      const open = e.type === 'exit' ? this.exitOpen(S) : null;
+      const key = [e.type, e.lit, e.liquid, e.locked, e.items?.[0]?.id, open].join('|');
       let r = this.dyn.get(e.id);
       if (r && r.key === key) continue;
       if (r) this.scene.remove(r.g);
-      const g = buildObject(e);
+      const g = buildObject(e, open);
       g.position.set(e.x + 0.5, this.gy(e.x, e.y), e.y + 0.5);
-      g.rotation.y = (hash(e.x, e.y, 5) - 0.5) * 0.6;
+      g.rotation.y += (hash(e.x, e.y, 5) - 0.5) * (e.type === 'exit' ? 0 : 0.6);
       g.userData.eid = e.id;
       g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       this.scene.add(g);
       this.dyn.set(e.id, { g, key, e });
     }
     for (const [id, r] of this.dyn) if (!seen.has(id)) { this.scene.remove(r.g); this.dyn.delete(id); }
+  }
+  exitOpen(S) {
+    const boss = S.levelInfo?.encounters.find((x) => x.boss);
+    return !boss || !Object.values(S.entities).some((e) => e.kind === 'enemy' && e.grp === boss.id && !e.dead);
   }
   rebuildStatic(S) {
     const p = this.p, map = this.view.map;
@@ -663,7 +682,7 @@ export class Renderer {
   frame(dt, now) {
     const v = this.view;
     if (!v.state || !v.map) return;
-    if (!this.terrainBuilt) this.buildTerrain();
+    if (v.map !== this.builtMap) this.resetWorld();
     const S = v.state, t = now / 1000;
     for (const e of Object.values(S.entities)) {
       if (e.kind === 'object') continue;
@@ -866,7 +885,7 @@ function buildCreature(e) {
   return r;
 }
 
-function buildObject(e) {
+function buildObject(e, open) {
   const g = new THREE.Group();
   const stone = lam('#7d7a75'), wood = lam('#7a5130'), dark = lam('#3a2a1a');
   switch (e.type) {
@@ -914,6 +933,15 @@ function buildObject(e) {
       g.add(mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.75, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateX(Math.PI / 2), lam('#93602f'), 0, 0.4, 0));
       g.add(mesh(new THREE.BoxGeometry(0.1, 0.14, 0.04), lam(e.locked ? '#c0392b' : '#e8c547'), 0, 0.38, 0.25));
       break;
+    case 'exit': {
+      const st = lam('#7a7d86', { flatShading: true });
+      g.add(mesh(new THREE.BoxGeometry(0.35, 2.2, 0.45), st, -0.85, 1.1, 0), mesh(new THREE.BoxGeometry(0.35, 2.2, 0.45), st, 0.85, 1.1, 0));
+      g.add(mesh(new THREE.BoxGeometry(2.2, 0.35, 0.55), st, 0, 2.35, 0));
+      g.add(mesh(new THREE.PlaneGeometry(1.35, 2), open ? basic('#7fd8ff', { transparent: true, opacity: 0.75, side: THREE.DoubleSide, toneMapped: false }) : basic('#1a1d24', { side: THREE.DoubleSide }), 0, 1.1, 0));
+      if (open) { const l = new THREE.PointLight('#7fd8ff', 4, 7, 1.5); l.position.set(0, 1.2, 0.6); g.add(l); }
+      g.rotation.y = Math.PI / 2;
+      break;
+    }
     case 'pile': {
       g.add(mesh(new THREE.SphereGeometry(0.2, 10, 8).scale(1, 0.7, 1), lam('#8a6a43'), 0, 0.14, 0));
       const it = e.items?.[0];

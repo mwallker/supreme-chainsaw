@@ -101,7 +101,7 @@ small { color: var(--dim); }
 .tchip.player i b { background: #4fd46b; }
 
 #topright { position: absolute; right: 10px; top: 10px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-#minimap { border: 1px solid var(--edge2); border-radius: 8px; background: #000; image-rendering: pixelated; cursor: pointer; }
+#minimap { width: 200px; border: 1px solid var(--edge2); border-radius: 8px; background: #000; image-rendering: pixelated; cursor: pointer; }
 #netinfo { background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; padding: 4px 8px; font-size: 12px; max-width: 220px; text-align: right; }
 #netinfo b { color: var(--gold); letter-spacing: 2px; user-select: text; }
 
@@ -215,3 +215,8 @@ small { color: var(--dim); }
 .wbanner { position: absolute; top: 26%; left: 50%; transform: translateX(-50%); font: bold 54px Georgia, serif; color: #ff7b5a; text-shadow: 0 4px 12px rgba(0,0,0,0.7); animation: banner 2s forwards; }
 .wbanner.win { color: #ffd86b; } .wbanner.lose { color: #c33; }
 @keyframes banner { 0% { opacity: 0; transform: translateX(-50%) scale(0.8); } 15% { opacity: 1; transform: translateX(-50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
+#objective { background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; padding: 6px 10px; font-size: 12px; width: 200px; }
+#objective b { font-family: Georgia, serif; color: var(--gold); display: block; margin-bottom: 3px; }
+#objective div { margin: 1px 0; }
+#objective .done { color: var(--dim); text-decoration: line-through; }
+#objective .open { color: #7fd8ff; }

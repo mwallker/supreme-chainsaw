@@ -16,6 +16,7 @@ export const OBJECTS = {
   crate: { n: 'Crate', block: true, hp: 8, destructible: true, d: 'Smash it open.' },
   chest: { n: 'Chest', block: true, container: true },
   pile: { n: 'Items', block: false, container: true },
+  exit: { n: 'Waygate', block: true, d: 'Leads onward. The whole party must gather here — and the guardian must fall first.' },
 };
 export const BARREL_NAMES = { oil: 'Oil Barrel', water: 'Water Barrel', poison: 'Poison Barrel', powder: 'Powder Keg' };
 export const HERB_BUSH = { healroot: 'Healroot Bush', emberroot: 'Emberroot Bush', frostleaf: 'Frostleaf', stormcap: 'Stormcap Cluster', nightshade: 'Nightshade Bush' };

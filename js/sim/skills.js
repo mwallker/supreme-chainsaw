@@ -23,6 +23,14 @@ export const SKILLS = {
       G.knockback(target, e.x, e.y, 2);
       if (chance(0.5)) addStatus(G, target, 'stunned', 1);
     } },
+  frost_nova: { n: 'Frost Nova', i: '✳', c: '#bfefff', ap: 2, cd: 3, range: 0, target: 'self', aoe: 1, d: 'Frost bursts from you: frost damage to adjacent foes (each rolls to hit) and freezes water and blood around you.',
+    cast(G, e) {
+      G.fx({ type: 'boom', x: e.x, y: e.y, r: 1, c: '#bfefff' });
+      for (const [x, y] of circleTiles(e.x, e.y, 1)) {
+        for (const c of G.creaturesAt(x, y)) if (G.hostile(e, c) && G.rollHit(e, c, 'spell', 'Frost Nova')) dealDamage(G, c, spell(e, 4, 7), 'frost', e);
+        if (x !== e.x || y !== e.y) applyElement(G, x, y, 'frost', { src: e });
+      }
+    } },
   rally: { n: 'Second Wind', i: '✚', c: '#6ee07a', ap: 1, cd: 4, range: 0, target: 'self', d: 'Heal yourself for 6 + Might.',
     cast(G, e) { heal(G, e, 6 + (e.attrs?.might || 3)); } },
   aimed_shot: { n: 'Aimed Shot', i: '◎', c: '#ffe08a', ap: 3, cd: 2, range: 8, los: true, target: 'enemy', d: 'A careful shot for 160% damage. Requires a bow.',
@@ -51,13 +59,13 @@ export const SKILLS = {
       if (!miss) for (const c of G.creaturesAt(x, y)) dealDamage(G, c, spell(e, 5, 8), 'fire', e);
       applyElement(G, x, y, 'fire', { ignite: true, src: e });
     } },
-  frost_ray: { attack: true, n: 'Frost Ray', i: '❄', c: '#9fe3ff', ap: 2, cd: 1, range: 6, los: true, target: 'tile', d: 'Frost damage and chill. Freezes water and blood (and anyone standing in it).',
+  frost_ray: { attack: true, n: 'Frost Ray', i: '❄', c: '#9fe3ff', ap: 2, cd: 2, range: 6, los: true, target: 'tile', d: 'Frost damage and chill. Freezes water and blood (and anyone standing in it).',
     cast(G, e, { x, y, miss }) {
       G.fx({ type: 'beam', fx: e.x, fy: e.y, tx: x, ty: y, c: '#bfefff' });
       if (!miss) for (const c of G.creaturesAt(x, y)) dealDamage(G, c, spell(e, 4, 7), 'frost', e);
       applyElement(G, x, y, 'frost', { src: e });
     } },
-  lightning: { attack: true, n: 'Lightning Lash', i: '⚡', c: '#f5e663', ap: 2, cd: 1, range: 6, los: true, target: 'tile', d: 'Shock damage. Electrifies water, blood and steam — everyone in it is shocked.',
+  lightning: { attack: true, n: 'Lightning Lash', i: '⚡', c: '#f5e663', ap: 2, cd: 2, range: 6, los: true, target: 'tile', d: 'Shock damage. Electrifies water, blood and steam — everyone in it is shocked.',
     cast(G, e, { x, y, miss }) {
       G.fx({ type: 'bolt', fx: e.x, fy: e.y, tx: x, ty: y, c: '#fff59a' });
       if (!miss) for (const c of G.creaturesAt(x, y)) dealDamage(G, c, spell(e, 4, 8), 'shock', e);

@@ -140,6 +140,9 @@ export class UI {
       }
     }
     if (this.shop) { const n = S.entities[this.shop]; if (!n || cheb(n.x, n.y, me.x, me.y) > 2) this.hide('shop'); }
+    const alive = Object.values(S.entities).filter((e) => e.kind === 'enemy' && !e.dead).map((e) => e.grp);
+    const oSig = JSON.stringify([S.level, S.victory, [...new Set(alive)]]);
+    if (oSig !== this.sig.o) { this.sig.o = oSig; this.renderObjective(new Set(alive)); }
     const nSig = JSON.stringify([S.players, S.time]);
     if (nSig !== this.sig.n) { this.sig.n = nSig; if (this.isOpen('net')) this.renderPanel('net'); this.renderNetInfo(); this.renderActions(); }
     this.pathCache = null;
@@ -182,6 +185,18 @@ export class UI {
       const col = isP ? e.color : ENEMIES[e.type].color;
       return `<div class="tchip ${isP ? 'player' : 'enemy'} ${c.active === id ? 'act' : ''} ${e.downed ? 'down' : ''}" style="background:${col}" data-tip="${esc(this.creatureTip(e))}">${isP ? CLASSES[e.cls].glyph : ENEMIES[e.type].glyph}<i><b style="width:${(100 * e.hp) / e.maxHp}%"></b></i></div>`;
     }).join('');
+  }
+  renderObjective(alive) {
+    const S = this.S, info = S.levelInfo;
+    if (!info) return;
+    const next = info.encounters.find((e) => alive.has(e.id));
+    const boss = info.encounters.find((e) => e.boss);
+    const open = !boss || !alive.has(boss.id);
+    $('#objective').innerHTML = `<b>${esc(info.name)}</b>` +
+      info.encounters.map((e) => `<div class="${alive.has(e.id) ? '' : 'done'}">${alive.has(e.id) ? (e.boss ? '☠' : '⚔') : '✓'} ${esc(e.name)}${e === next ? ' <span class="subtle">← next</span>' : ''}</div>`).join('') +
+      `<div class="${open ? 'open' : ''}">${open ? '◈ Waygate open — gather the party there' : '◇ Waygate sealed'}</div>` +
+      (S.victory ? '<div class="open">✦ Campaign complete!</div>' : '') +
+      `<div class="subtle">Orange ▪ on the map: campfires to rest at.</div>`;
   }
   renderNetInfo() {
     const n = this.v.net || {};
@@ -485,6 +500,10 @@ export class UI {
       <li>Herbs + mortar → pastes. Flask + water → fill at wells, lakes or water barrels. Oil from oil barrels.</li>
       <li>Light the forge (tinderbox / torch), smelt iron ore, forge gear with a hammer. Burn logs on a campfire for charcoal; charcoal + sulfur → gunpowder.</li>
       <li>Anything can be thrown. Flasks shatter into surfaces; bombs combine liquids and elements.</li></ul>
+      <h3>The campaign</h3>
+      <ul><li>Three levels: <b>The Greenwood Road</b> (day), <b>Smugglers' Marsh</b> (dusk into night, everything wet) and <b>The Frozen Barrow</b> (night, the dead see in the dark).</li>
+      <li>Follow the road east. Each level has four fights (the last is a boss guarding the <b>Waygate</b>) and a campfire midway to rest at. The objectives panel (top right) tracks them; red circles on the map mark fights still ahead.</li>
+      <li>Fights scale with the number of players. When the boss falls, gather the whole party at the Waygate to travel on — characters keep their levels and gear.</li></ul>
       <h3>Light, darkness &amp; hitting</h3>
       <ul><li>Attacks and attack spells roll to hit. Base 90% melee / 85% ranged &amp; spells, ±2% per Finesse point of attacker and target.</li>
       <li>Every tile is <b>☀ Lit</b>, <b>◐ Dim</b> (−15% to hit anyone there) or <b>● Dark</b> (−35%). Attacking a lit target from darkness gives +10%.</li>

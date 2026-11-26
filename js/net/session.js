@@ -6,7 +6,7 @@ export const PROTOCOL = 3;
 export const HOST_PID = 'host';
 const HEARTBEAT_TIMEOUT = 10000;
 
-const globalsOf = (s) => ({ combat: s.combat, players: s.players, recipes: s.recipes, round: s.round, spawn: s.spawn, seed: s.seed });
+const globalsOf = (s) => ({ combat: s.combat, players: s.players, recipes: s.recipes, round: s.round, spawn: s.spawn, seed: s.seed, time: s.time, level: s.level, levelInfo: s.levelInfo, activated: s.activated, victory: s.victory });
 
 export class HostSession extends Emitter {
   constructor(game) {
@@ -18,6 +18,14 @@ export class HostSession extends Emitter {
     this.cacheStale = true;
     this.nextPid = 1;
     game.events.on('priv', ({ pid, msg }) => { if (pid === HOST_PID) this.emit('priv', msg); });
+    // a new level means a new map: resend the world to everyone
+    game.events.on('level', () => {
+      const S = this.game.state;
+      const msg = { t: 'level', W: this.game.map.W, H: this.game.map.H, tiles: encodeTiles(Array.from(this.game.map.tiles)), snap: { e: S.entities, s: S.surfaces, g: globalsOf(S) } };
+      for (const ch of this.conns.values()) ch.send(msg);
+      this.rebaseCache();
+      this.emit('level');
+    });
     // heartbeat: detect peers that vanished without saying goodbye
     this.hb = setInterval(() => {
       const now = Date.now();
@@ -123,6 +131,14 @@ export class ClientSession extends Emitter {
   }
   onMsg(m) {
     switch (m.t) {
+      case 'level':
+        if (!this.state) return;
+        this.map = new WorldMap(m.W, m.H, decodeTiles(m.tiles));
+        this.state = { entities: m.snap.e, surfaces: m.snap.s, ...m.snap.g };
+        this._dirty = true;
+        this.emit('level');
+        this.emit('state');
+        break;
       case 'welcome':
         this.pid = m.pid;
         this.myEid = m.eid;

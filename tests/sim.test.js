@@ -14,10 +14,12 @@ const test = (name, fn) => tests.push([name, fn]);
 const run = (G, ms) => { const end = performance.now() + ms; while (performance.now() < end) G.tick(); };
 const char = (cls, name = 'Tess') => ({ name, cls, color: '#4fa3ff', attrs: { sellsword: { might: 6, finesse: 3, intellect: 2, vigor: 7 }, ranger: { might: 3, finesse: 8, intellect: 2, vigor: 5 }, alchemist: { might: 4, finesse: 5, intellect: 6, vigor: 3 }, elementalist: { might: 2, finesse: 4, intellect: 8, vigor: 4 } }[cls] });
 
-test('world generates with village, camps, enemies', () => {
-  const G = new Game({ seed: 1234 });
+test('level 1 generates with village, encounters, exit', () => {
+  const G = new Game({ level: 0 });
   const ents = Object.values(G.state.entities);
-  assert.ok(ents.filter((e) => e.kind === 'enemy').length >= 20, 'enemies');
+  assert.equal(G.state.levelInfo.encounters.length, 4);
+  assert.ok(G.state.levelInfo.exit);
+  assert.ok(ents.filter((e) => e.kind === 'enemy').length >= 8, 'enemies');
   assert.ok(ents.some((e) => e.type === 'forge'));
   assert.ok(ents.some((e) => e.kind === 'npc'));
   console.log('   entities:', ents.length, 'enemies:', ents.filter((e) => e.kind === 'enemy').length, 'json KB:', (JSON.stringify(G.state).length / 1024) | 0);
@@ -180,7 +182,7 @@ test('light: day/night, forest canopy, campfire radius', () => {
   let forest = null;
   for (let i = 0; i < M.tiles.length && !forest; i++) if (M.tiles[i] === T.FOREST) forest = [i % M.W, (i / M.W) | 0];
   S.time = 12 * 60;
-  assert.equal(lightAt(S, M, S.spawn.x + 8, S.spawn.y + 8), LIT);
+  assert.equal(lightAt(S, M, S.spawn.x, S.spawn.y), LIT, 'village square is lit at noon');
   assert.equal(lightAt(S, M, forest[0], forest[1]) <= DIM, true, 'forest canopy is dim at noon');
   S.time = 23 * 60;
   assert.equal(phaseOf(S.time), 'night');
@@ -258,6 +260,65 @@ test('resting at night skips to morning', () => {
   G.handleAction('a', { type: 'interact', target: fire.id, opt: 'rest' });
   assert.equal(phaseOf(G.state.time), 'day');
   assert.ok(G.state.time > 22 * 60);
+});
+
+test('encounters scale with party size when the fight starts', () => {
+  const counts = [];
+  for (const n of [1, 3]) {
+    const G = new Game({ level: 0 });
+    for (let i = 0; i < n; i++) G.addPlayer('p' + i, char('ranger', 'P' + i));
+    const wolf = Object.values(G.state.entities).find((e) => e.grp === 'g1');
+    G.startCombat([wolf.id]);
+    counts.push(Object.values(G.state.entities).filter((e) => e.grp === 'g1').length);
+    assert.ok(Object.values(G.state.entities).filter((e) => e.grp === 'g1').every((e) => e.dm > 0), 'damage multiplier applied');
+  }
+  assert.equal(counts[1] - counts[0], 2, 'one extra wolf per extra player');
+});
+
+test('waygate: sealed until the boss falls, needs the party, then loads the next level', () => {
+  const G = new Game({ level: 0 });
+  const { eid } = G.addPlayer('a', char('sellsword'));
+  const me = G.ent(eid);
+  me.inv.push({ id: 'iron_ingot', q: 2 });
+  const info = G.state.levelInfo;
+  G.place(me, info.exit.x - 1, info.exit.y);
+  G.travel('a', me);
+  assert.equal(G.state.level, 0, 'sealed while the boss lives');
+  for (const e of Object.values(G.state.entities)) if (e.grp === 'g4') e.dead = true;
+  G.travel('a', me);
+  assert.equal(G.state.level, 1, 'travelled to level II');
+  assert.ok(G.ent(eid), 'character came along');
+  assert.ok(me.inv.some((s) => s.id === 'iron_ingot'), 'with their bags');
+  assert.ok(Object.values(G.state.entities).some((e) => e.type === 'warlord'));
+});
+
+test('stun during your own turn ends it (no soft-lock), then Resolute', async () => {
+  const { addStatus } = await import('../js/sim/rules.js');
+  const G = new Game({ level: 0 });
+  const { eid } = G.addPlayer('a', char('sellsword'));
+  const me = G.ent(eid);
+  const w = G.addEnt(makeEnemy('wolf', me.x + 2, me.y, 'gs'));
+  G.startCombat([w.id], me.id);
+  me.st.wet = 2;
+  addStatus(G, me, 'shocked', 1);
+  run(G, 800);
+  assert.notEqual(G.state.combat?.active, me.id, 'turn passed on');
+  assert.ok(me.st.resolute, 'resolute');
+  addStatus(G, me, 'stunned', 1);
+  assert.ok(!me.st.stunned, 'resolute blocks a second stun');
+});
+
+test('a combatant who dies on their own turn does not stall combat', () => {
+  const G = new Game({ level: 0 });
+  const { eid } = G.addPlayer('a', char('sellsword'));
+  const me = G.ent(eid);
+  const w1 = G.addEnt(makeEnemy('wolf', me.x + 3, me.y, 'gd'));
+  G.addEnt(makeEnemy('wolf', me.x + 4, me.y, 'gd'));
+  G.startCombat([w1.id], w1.id);
+  assert.equal(G.state.combat.active, w1.id);
+  w1.dead = true;
+  run(G, 1200);
+  assert.notEqual(G.state.combat?.active, w1.id);
 });
 
 for (const [name, fn] of tests) {

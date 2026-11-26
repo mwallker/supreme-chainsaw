@@ -6,13 +6,16 @@ import { OBJECTS } from '../data/objects.js';
 import { ATTRS } from '../data/classes.js';
 import { STARTING_RECIPES } from '../data/recipes.js';
 import { WorldMap, buildIndex, findPath, los, walkable, isCreature, encodeTiles, decodeTiles } from './map.js';
-import { generateWorld } from './worldgen.js';
+import { generateLevel } from './worldgen.js';
+import { LEVELS, SIZE_HP } from '../data/levels.js';
+import { makeEnemy } from './entities.js';
 import { makePlayer, weaponOf, statMult, critChance, moveRange, maxAp, apRegen, throwRange, throwAp, addItem, takeFromSlot, maxHp } from './entities.js';
 import { dealDamage, addStatus, tickStatuses, tickSurfaces, surfaceEffect, applyElement, applyArea, heal, explosion, elementHit, damageObject } from './rules.js';
 import { SKILLS, skillError } from './skills.js';
 import { doCombine, craftRecipe, stackAt } from './crafting.js';
 import { applyRulesFor, makeCtx, defaultOptions, runDefault, useConsumable } from './interact.js';
 import { aiStep } from './ai.js';
+import { botStep } from './bots.js';
 import { hitChance, START_TIME } from './light.js';
 
 const ROUND_MS = 4000;
@@ -24,6 +27,10 @@ export class Game {
     this.timers = [];
     this.outLog = []; this.outFx = []; this.outPriv = [];
     this.pendingAggro = new Set();
+    this.clock = opts.clock || (() => performance.now());
+    this.timeScale = opts.timeScale ?? 1; // <1 speeds up animations/delays (bots & balance runs)
+    this.enemyBrain = opts.enemyBrain || 'smart';
+    this.botPlayers = new Set(); // player entity ids driven by the player bot
     if (opts.save) {
       const s = opts.save;
       this.map = new WorldMap(s.W, s.H, decodeTiles(s.tiles));
@@ -32,19 +39,91 @@ export class Game {
       this.state.combat = null;
       for (const e of Object.values(this.state.entities)) if (e.kind === 'player') { e.online = false; delete e.pid; }
     } else {
-      const seed = opts.seed ?? Math.floor(Math.random() * 1e9);
-      const w = generateWorld(seed);
-      this.map = new WorldMap(w.W, w.H, w.tiles);
-      this.state = { seed, nextId: 1, entities: {}, surfaces: {}, combat: null, players: {}, recipes: [...STARTING_RECIPES], spawn: w.spawn, round: 0, time: START_TIME };
-      for (const e of w.entities) this.addEnt(e);
+      this.state = { nextId: 1, entities: {}, surfaces: {}, combat: null, players: {}, recipes: [...STARTING_RECIPES], round: 0 };
+      this.loadLevel(opts.level ?? 0);
     }
     if (this.state.time == null) this.state.time = START_TIME;
     this.dirtyIndex = true;
-    this.lastRound = performance.now();
+    this.lastRound = this.now();
     this.lastWander = 0;
   }
 
+  // ---------- levels ----------
+  /** Builds level i. Player characters (with gear and levels) travel along; everything else is replaced. */
+  loadLevel(i) {
+    const def = LEVELS[i];
+    const w = generateLevel(i);
+    const S = this.state;
+    const players = Object.values(S.entities).filter((e) => e.kind === 'player');
+    this.map = new WorldMap(w.W, w.H, w.tiles);
+    S.entities = {};
+    S.surfaces = {};
+    S.combat = null;
+    S.level = i;
+    S.seed = def.seed;
+    S.spawn = w.spawn;
+    S.levelInfo = w.info;
+    S.activated = {};
+    S.time = def.time;
+    S.cleared = [];
+    this.rt.clear();
+    this.timers = [];
+    for (const e of w.entities) this.addEnt(e);
+    for (const [x, y, r] of w.info.oil || []) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + r && this.map.tilePass(x + dx, y + dy)) S.surfaces[this.map.idx(x + dx, y + dy)] = { type: 'oil', t: -1 };
+    this.dirtyIndex = true;
+    for (const p of players) {
+      const sp = this.freeTileNear(S.spawn.x, S.spawn.y);
+      p.x = sp[0]; p.y = sp[1];
+      p.hp = p.maxHp; p.st = {}; p.downed = false; p.ap = 0; p.mp = 0;
+      S.entities[p.id] = p;
+      this.dirtyIndex = true;
+    }
+    this.events.emit('level', i);
+    this.fx({ type: 'banner', text: def.name });
+    this.log(`— ${def.name} — ${def.blurb}`, 'sys');
+  }
+  partySize() { return Math.max(1, this.players().filter((p) => p.online).length); }
+  /** The first time an encounter fights, add per-player extras and apply its balance multipliers. */
+  activateEncounter(grp) {
+    const S = this.state;
+    if (!grp || S.activated[grp]) return;
+    const def = LEVELS[S.level]?.encounters.find((e) => e.id === grp);
+    if (!def) return;
+    S.activated[grp] = true;
+    const n = this.partySize();
+    const info = S.levelInfo.encounters.find((e) => e.id === grp);
+    for (let k = 1; k < n; k++) for (const type of def.perPlayer || []) {
+      const p = this.freeTileNear(info.x + ri(-2, 2), info.y + ri(-2, 2));
+      const e = this.addEnt(makeEnemy(type, p[0], p[1], grp, { enc: grp }));
+      e.hx = p[0]; e.hy = p[1];
+    }
+    const hpMul = (def.hpMul ?? 1) * (SIZE_HP[n] ?? 1);
+    for (const e of Object.values(S.entities)) if (e.kind === 'enemy' && e.grp === grp && !e.dead) {
+      e.maxHp = Math.max(1, Math.round(ENEMIES[e.type].hp * hpMul));
+      e.hp = e.maxHp;
+      e.dm = (def.dmgMul ?? 1) * Math.sqrt(SIZE_HP[n] ?? 1);
+    }
+  }
+  encounterCleared(grp) {
+    return !Object.values(this.state.entities).some((e) => e.kind === 'enemy' && e.grp === grp && !e.dead);
+  }
+  travel(pid, e) {
+    const S = this.state, info = S.levelInfo;
+    if (S.combat) return this.tell(pid, 'Not during a fight.');
+    const boss = info.encounters.find((x) => x.boss);
+    if (boss && !this.encounterCleared(boss.id)) return this.tell(pid, `The waygate is dark. ${boss.name} still guards it.`);
+    const away = this.players().filter((p) => p.online && Math.max(Math.abs(p.x - info.exit.x), Math.abs(p.y - info.exit.y)) > 5);
+    if (away.length) return this.tell(pid, `Gather the party first (waiting for ${away.map((p) => p.name).join(', ')}).`);
+    if (S.level + 1 >= LEVELS.length) {
+      if (!S.victory) { S.victory = true; this.log('✦ The Barrow King is no more. You have completed all three levels of the prototype!', 'good'); this.fx({ type: 'banner', text: 'Victory' }); }
+      return;
+    }
+    this.loadLevel(S.level + 1);
+  }
+
   // ---------- infrastructure ----------
+  now() { return this.clock(); }
+  ms(x) { return x * this.timeScale; }
   get index() {
     if (this.dirtyIndex) { this._index = buildIndex(this.state, this.map); this.dirtyIndex = false; }
     return this._index;
@@ -68,7 +147,7 @@ export class Game {
   fx(o) { this.outFx.push(o); this.events.emit('fx', o); }
   float(e, text, c) { this.fx({ type: 'float', x: e.x, y: e.y, text, c }); }
   tell(pid, msg) { if (pid) { this.outPriv.push({ pid, msg }); this.events.emit('priv', { pid, msg }); } }
-  later(ms, fn) { this.timers.push({ at: performance.now() + ms, fn }); }
+  later(ms, fn) { this.timers.push({ at: this.now() + this.ms(ms), fn }); }
   players() { return Object.values(this.state.entities).filter((e) => e.kind === 'player'); }
   creaturesAt(x, y) {
     const a = this.index.at.get(this.map.idx(x, y));
@@ -149,7 +228,7 @@ export class Game {
     const r = this.rtOf(e.id);
     r.path = path.slice();
     r.queued = queued;
-    r.next = performance.now() + 30;
+    r.next = this.now() + this.ms(30);
   }
   /** Ensure e is within range of (x,y); if not, walk there and re-issue the action. Returns true if ready now. */
   approach(pid, e, a, x, y, range, cost = 0, needLos = false) {
@@ -188,8 +267,10 @@ export class Game {
     const S = this.state;
     const set = new Set();
     const live = (e) => e && e.kind === 'enemy' && !e.dead;
+    for (const id of enemyIds) this.activateEncounter(this.ent(id)?.grp);
     for (const id of enemyIds) if (live(this.ent(id))) set.add(id);
     if (!set.size) return;
+    for (const id of [...set]) { const a = this.ent(id); for (const o of Object.values(S.entities)) if (live(o) && o.grp && o.grp !== a.grp && cheb(o.x, o.y, a.x, a.y) <= 6) this.activateEncounter(o.grp); }
     const all = Object.values(S.entities).filter((e) => live(e) && !this.inCombat(e));
     for (const id of [...set]) {
       const a = this.ent(id);
@@ -228,18 +309,21 @@ export class Game {
     e.ap = Math.min(maxAp(e), e.ap + apRegen(e) - (e.st.chilled ? 1 : 0));
     e.mp = 0;
     for (const sk of e.skills || []) if (sk.cd > 0) sk.cd--;
+    // a stun/freeze applied since your last turn costs this turn; afterwards you are briefly Resolute
+    const skip = e.st.frozen ? 'frozen' : e.st.stunned ? 'stunned' : null;
     tickStatuses(this, e);
+    if (skip) { delete e.st.frozen; delete e.st.stunned; e.st.resolute = 2; }
     if (!e.dead && !e.downed) surfaceEffect(this, e, 'turn');
     const r = this.rtOf(e.id);
-    r.aiSteps = 0; r.moved = 0; r.waitEnd = false;
+    r.aiSteps = 0; r.moved = 0; r.waitEnd = false; r.botSteps = 0; r.banned = new Set();
     c.turnStart = Date.now();
     if (e.dead || e.downed) return this.later(600, () => this.endTurn(e.id));
-    if (e.st.frozen || e.st.stunned) {
-      this.log(`${e.name} is ${e.st.frozen ? 'frozen' : 'stunned'} and loses the turn.`);
+    if (skip) {
+      this.log(`${e.name} is ${skip} and loses the turn.`);
       this.float(e, 'Skip', '#ffe14d');
       return this.later(900, () => this.endTurn(e.id));
     }
-    if (e.kind === 'enemy') r.aiNext = performance.now() + 550;
+    if (e.kind === 'enemy' || this.botPlayers.has(e.id)) r.aiNext = this.now() + this.ms(550);
   }
   endTurn(id) {
     const c = this.state.combat;
@@ -271,6 +355,7 @@ export class Game {
     const foes = ents.filter((e) => e.kind === 'enemy' && !e.dead);
     const friends = ents.filter((e) => e.kind === 'player' && !e.downed);
     if (foes.length && friends.length) return false;
+    this.lastRounds = c.round;
     this.state.combat = null;
     if (!foes.length) {
       this.log('✦ Victory! The fight is over.', 'good');
@@ -287,7 +372,7 @@ export class Game {
       for (const e of foes) { e.hp = e.maxHp; e.st = {}; this.place(e, e.hx, e.hy); }
     }
     for (const e of ents) { e.ap = 0; e.mp = 0; }
-    this.lastRound = performance.now();
+    this.lastRound = this.now();
     return true;
   }
   spendAp(pid, e, n) {
@@ -471,8 +556,8 @@ export class Game {
     const combat = this.inCombat(e);
     if (combat) {
       if (this.state.combat.active !== e.id) return this.tell(pid, "It's not your turn.");
-      if (r.path.length) return this.tell(pid, 'Wait until you finish moving.');
-      if (e.st.frozen || e.st.stunned) return;
+      if (r.path.length && a.type !== 'endTurn') return this.tell(pid, 'Wait until you finish moving.');
+      if ((e.st.frozen || e.st.stunned) && a.type !== 'endTurn') return;
     }
     switch (a.type) {
       case 'move': return this.cmdMove(pid, e, a);
@@ -617,7 +702,7 @@ export class Game {
   }
 
   // ---------- main loop ----------
-  tick(now = performance.now()) {
+  tick(now = this.now()) {
     // timers
     if (this.timers.length) {
       const due = this.timers.filter((t) => t.at <= now);
@@ -636,7 +721,7 @@ export class Game {
       const px = e.x, py = e.y;
       this.place(e, nx, ny);
       r.path.shift();
-      r.next = now + (combat ? 170 : 135);
+      r.next = now + this.ms(combat ? 170 : 135);
       const trail = e.kind === 'enemy' && ENEMIES[e.type].trail;
       if (trail && combat) applyElement(this, px, py, trail);
       surfaceEffect(this, e, 'enter');
@@ -649,13 +734,19 @@ export class Game {
     const c = this.state.combat;
     if (c) {
       const a = this.ent(c.active);
-      if (a && a.kind === 'enemy' && !a.dead) {
+      // whoever's turn it is may die / go down / disconnect mid-turn: move on
+      if (a && (a.dead || a.downed || (a.kind === 'player' && !a.online))) {
+        const r = this.rtOf(a.id);
+        if (!r.waitEnd && !r.path.length) { r.waitEnd = true; this.later(400, () => this.endTurn(a.id)); }
+      }
+      const botPlayer = a && a.kind === 'player' && this.botPlayers.has(a.id) && !a.downed && !a.st.frozen && !a.st.stunned;
+      if (a && ((a.kind === 'enemy' && !a.dead) || botPlayer)) {
         const r = this.rtOf(a.id);
         if (!r.path.length && !r.waitEnd && now >= r.aiNext) {
           let delay = null;
-          try { delay = aiStep(this, a); } catch (err) { console.error(err); }
+          try { delay = a.kind === 'enemy' && this.enemyBrain !== 'smart' ? aiStep(this, a) : botStep(this, a); } catch (err) { console.error(err); }
           if (delay == null) { r.waitEnd = true; this.later(250, () => this.endTurn(a.id)); }
-          else r.aiNext = now + delay;
+          else r.aiNext = now + this.ms(delay);
         }
       }
     }
@@ -670,12 +761,12 @@ export class Game {
     }
     if (this.pendingAggro.size) { const ids = [...this.pendingAggro]; this.pendingAggro.clear(); this.startCombat(ids); }
     // real-time rounds outside combat
-    if (!this.state.combat && now - this.lastRound > ROUND_MS) {
+    if (!this.state.combat && now - this.lastRound > this.ms(ROUND_MS)) {
       this.lastRound = now;
       this.realtimeRound();
     }
     // idle wandering
-    if (now - this.lastWander > 1500) {
+    if (now - this.lastWander > this.ms(1500)) {
       this.lastWander = now;
       for (const e of Object.values(this.state.entities)) {
         if (e.kind !== 'enemy' || e.dead || this.inCombat(e) || !chance(0.2)) continue;

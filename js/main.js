@@ -12,7 +12,7 @@ import { UI } from './ui/hud.js';
 import { esc, randomCode, pick } from './util.js';
 
 const $ = (s) => document.querySelector(s);
-const SAVE_KEY = 'emberwake-save-v1';
+const SAVE_KEY = 'emberwake-save-v2'; // v2: level-based worlds
 const NAMES = ['Aldric', 'Brenna', 'Corvin', 'Dagny', 'Ember', 'Fenna', 'Garrick', 'Hollis', 'Isolde', 'Jory', 'Kestrel', 'Lirael', 'Maren', 'Niall', 'Orla', 'Pell', 'Quill', 'Rook', 'Sable', 'Tamsin', 'Ulric', 'Vesna', 'Wren', 'Yara'];
 
 const screens = ['title', 'create', 'connecting', 'game'];
@@ -216,16 +216,22 @@ function enterGame(view) {
   const renderer = new Renderer($('#view'), view);
   const ui = new UI(view, renderer);
   const mm = $('#minimap'), mctx = mm.getContext('2d');
-  const base = document.createElement('canvas');
-  base.width = view.map.W; base.height = view.map.H;
-  const bctx = base.getContext('2d');
-  const img = bctx.createImageData(view.map.W, view.map.H);
-  for (let i = 0; i < view.map.tiles.length; i++) {
-    const c = parseInt(TILES[view.map.tiles[i]].c.slice(1), 16);
-    img.data[i * 4] = (c >> 16) & 255; img.data[i * 4 + 1] = (c >> 8) & 255; img.data[i * 4 + 2] = c & 255; img.data[i * 4 + 3] = 255;
-  }
-  bctx.putImageData(img, 0, 0);
-  const sc = mm.width / view.map.W;
+  let base = null, baseMap = null, sc = 1;
+  const rebuildBase = () => {
+    const map = view.map;
+    baseMap = map;
+    mm.width = 200; mm.height = Math.round((200 * map.H) / map.W);
+    sc = mm.width / map.W;
+    base = document.createElement('canvas');
+    base.width = map.W; base.height = map.H;
+    const bctx = base.getContext('2d');
+    const img = bctx.createImageData(map.W, map.H);
+    for (let i = 0; i < map.tiles.length; i++) {
+      const c = parseInt(TILES[map.tiles[i]].c.slice(1), 16);
+      img.data[i * 4] = (c >> 16) & 255; img.data[i * 4 + 1] = (c >> 8) & 255; img.data[i * 4 + 2] = c & 255; img.data[i * 4 + 3] = 255;
+    }
+    bctx.putImageData(img, 0, 0);
+  };
   mm.onclick = (ev) => {
     const me = view.state.entities[view.myEid];
     const r = mm.getBoundingClientRect();
@@ -233,17 +239,24 @@ function enterGame(view) {
     renderer.cam.oy = (ev.clientY - r.top) / sc - me.y;
   };
   const drawMini = () => {
+    if (view.map !== baseMap) rebuildBase();
     mctx.imageSmoothingEnabled = false;
     mctx.drawImage(base, 0, 0, mm.width, mm.height);
-    const S = view.state;
+    const S = view.state, info = S.levelInfo;
     const ps = Object.values(S.entities).filter((e) => e.kind === 'player');
+    const alive = new Set(Object.values(S.entities).filter((e) => e.kind === 'enemy' && !e.dead).map((e) => e.grp));
+    if (info) {
+      for (const c of info.checkpoints) { mctx.fillStyle = '#ffb347'; mctx.fillRect(c.x * sc - 2, c.y * sc - 2, 4, 4); }
+      for (const en of info.encounters) if (alive.has(en.id)) { mctx.strokeStyle = en.boss ? '#ff3030' : '#e06060'; mctx.lineWidth = en.boss ? 2 : 1.5; mctx.beginPath(); mctx.arc(en.x * sc, en.y * sc, en.boss ? 6 : 4.5, 0, 7); mctx.stroke(); }
+      mctx.fillStyle = '#7fd8ff'; mctx.fillRect(info.exit.x * sc - 2.5, info.exit.y * sc - 2.5, 5, 5);
+    }
     for (const e of Object.values(S.entities)) {
       if (e.kind === 'enemy' && !e.dead && ps.some((p) => Math.abs(p.x - e.x) < 14 && Math.abs(p.y - e.y) < 14)) { mctx.fillStyle = ENEMIES[e.type].boss ? '#ff2222' : '#e04848'; mctx.fillRect(e.x * sc - 1, e.y * sc - 1, 3, 3); }
       else if (e.kind === 'npc') { mctx.fillStyle = '#ffd86b'; mctx.fillRect(e.x * sc - 1, e.y * sc - 1, 3, 3); }
     }
-    for (const p of ps) { mctx.fillStyle = p.color; mctx.beginPath(); mctx.arc(p.x * sc, p.y * sc, p.id === view.myEid ? 3.5 : 2.5, 0, 7); mctx.fill(); if (p.id === view.myEid) { mctx.strokeStyle = '#fff'; mctx.stroke(); } }
+    for (const p of ps) { mctx.fillStyle = p.color; mctx.beginPath(); mctx.arc(p.x * sc, p.y * sc, p.id === view.myEid ? 3.5 : 2.5, 0, 7); mctx.fill(); if (p.id === view.myEid) { mctx.strokeStyle = '#fff'; mctx.lineWidth = 1; mctx.stroke(); } }
     const R = 13 / renderer.cam.zoom;
-    mctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    mctx.strokeStyle = 'rgba(255,255,255,0.6)'; mctx.lineWidth = 1;
     mctx.beginPath(); mctx.arc(renderer.cam.x * sc, renderer.cam.y * sc, R * sc, 0, 7); mctx.stroke();
   };
   let last = performance.now(), lastMini = 0;
