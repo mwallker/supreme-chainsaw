@@ -459,7 +459,7 @@ export class UI {
       <h3>Basics</h3>
       <ul><li><b>Left-click</b> ground to walk; enemies to attack; chests, bushes, the merchant etc. to interact. With an axe/pickaxe in your bags, clicking a tree/rock chops/mines it.</li>
       <li><b>Right-click anything</b> for every option — including <b>using any of your items on it</b>.</li>
-      <li><kbd>I</kbd> inventory · <kbd>C</kbd> crafting · <kbd>P</kbd> character · <kbd>N</kbd> party · <kbd>H</kbd> help · <kbd>Enter</kbd> chat · <kbd>WASD</kbd> pan · <kbd>F</kbd> recenter · wheel to zoom</li></ul>
+      <li><kbd>I</kbd> inventory · <kbd>C</kbd> crafting · <kbd>P</kbd> character · <kbd>N</kbd> party · <kbd>H</kbd> help · <kbd>Enter</kbd> chat · <kbd>WASD</kbd> pan · <kbd>Q</kbd>/<kbd>E</kbd> or middle-drag to rotate the camera · <kbd>F</kbd> recenter · wheel to zoom</li></ul>
       <h3>Turn-based combat</h3>
       <ul><li>Combat starts when enemies spot you (or you attack). Every action costs <b>AP</b>: you get +4 per turn and can bank up to 6.</li>
       <li>Moving costs 1 AP per ${3} tiles. Attacks 2 AP, throws 2 AP, items 1 AP. <kbd>1</kbd>–<kbd>5</kbd> pick attack/skills, <kbd>Space</kbd> ends your turn.</li>
@@ -758,10 +758,14 @@ export class UI {
   }
   panCamera(dt) {
     const sp = 14 * dt / this.r.cam.zoom;
-    if (this.keys.has('w') || this.keys.has('arrowup')) this.r.cam.oy -= sp;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) this.r.cam.oy += sp;
-    if (this.keys.has('a') || this.keys.has('arrowleft')) this.r.cam.ox -= sp;
-    if (this.keys.has('d') || this.keys.has('arrowright')) this.r.cam.ox += sp;
+    let dx = 0, dy = 0;
+    if (this.keys.has('w') || this.keys.has('arrowup')) dy -= sp;
+    if (this.keys.has('s') || this.keys.has('arrowdown')) dy += sp;
+    if (this.keys.has('a') || this.keys.has('arrowleft')) dx -= sp;
+    if (this.keys.has('d') || this.keys.has('arrowright')) dx += sp;
+    if (dx || dy) this.r.pan(dx, dy);
+    if (this.keys.has('q')) this.r.cam.yaw += 1.8 * dt;
+    if (this.keys.has('e')) this.r.cam.yaw -= 1.8 * dt;
   }
   defaultClick(x, y) {
     const v = this.v, me = this.me();

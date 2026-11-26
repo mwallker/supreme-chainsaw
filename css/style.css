@@ -197,3 +197,21 @@ small { color: var(--dim); }
 .toast.info { background: rgba(20,30,20,0.95); border-color: #4f8a4f; }
 @keyframes fade { 0% { opacity: 0; transform: translateY(-6px); } 8% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
 .targeting-hint { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); background: rgba(60,40,10,0.92); border: 1px solid var(--gold); border-radius: 8px; padding: 5px 12px; font-size: 13px; z-index: 9; pointer-events: none; }
+
+/* ---------- 3D world overlay ---------- */
+#game::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%); transition: box-shadow 0.4s; }
+#game.in-combat::after { box-shadow: inset 0 0 0 4px rgba(200,40,40,0.45), inset 0 0 80px rgba(160,20,20,0.35); }
+#world-ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
+.plate { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; text-shadow: 0 0 3px #000, 0 0 3px #000; white-space: nowrap; }
+.plate b { font-weight: 600; color: #fff; }
+.plate.np b { color: #ffd86b; }
+.plate.me b { color: #bfe3ff; }
+.plate i { display: block; width: 46px; height: 5px; background: rgba(0,0,0,0.7); border: 1px solid rgba(0,0,0,0.8); border-radius: 3px; overflow: hidden; }
+.plate i s { display: block; height: 100%; background: #e04848; text-decoration: none; }
+.plate.pl i s { background: #4fd46b; }
+.plate span { display: flex; gap: 2px; }
+.plate em { width: 7px; height: 7px; border-radius: 50%; border: 1px solid #0008; }
+.wfloat { position: absolute; left: 0; top: 0; font: bold 17px 'Segoe UI', sans-serif; text-shadow: 0 0 3px #000, 0 0 4px #000, 1px 1px 0 #000; white-space: nowrap; }
+.wbanner { position: absolute; top: 26%; left: 50%; transform: translateX(-50%); font: bold 54px Georgia, serif; color: #ff7b5a; text-shadow: 0 4px 12px rgba(0,0,0,0.7); animation: banner 2s forwards; }
+.wbanner.win { color: #ffd86b; } .wbanner.lose { color: #c33; }
+@keyframes banner { 0% { opacity: 0; transform: translateX(-50%) scale(0.8); } 15% { opacity: 1; transform: translateX(-50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }

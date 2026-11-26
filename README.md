@@ -1,8 +1,8 @@
 # Emberwake — co-op RPG prototype
 
-A browser prototype of an open-world RPG with **turn-based action-point combat**, a deep **crafting & item interaction** system and **peer-to-peer co-op for up to 4 players** (one player hosts — no dedicated server).
+A **3D** browser prototype of an open-world RPG with **turn-based action-point combat**, a deep **crafting & item interaction** system and **peer-to-peer co-op for up to 4 players** (one player hosts — no dedicated server).
 
-No build step, no dependencies, no assets: plain ES modules + Canvas 2D, all art drawn procedurally.
+No build step and no art assets: plain ES modules + [Three.js](https://threejs.org) (r160, vendored in `vendor/`, MIT). The world is a tactical diorama — tiled terrain with height, low-poly procedural models, dynamic shadows, fire light, rotatable camera.
 
 ## Run it
 
@@ -81,7 +81,7 @@ Example chains: emberroot → *mortar* → ember paste → coat arrows → shoot
 | Right-click | context menu with every action, including "use item on this" |
 | `1`–`5` | attack / skills, then click a target · `Space` end turn · `Esc` cancel |
 | `I` `C` `P` `N` `H` | inventory, crafting, character, party/connection, help |
-| `Enter` | chat · `WASD` pan · `F` recenter · wheel zoom · minimap click to look |
+| `Enter` | chat · `WASD` pan · `Q`/`E` or middle-drag rotate camera · `F` recenter · wheel zoom · minimap click to look |
 
 ## Code layout
 
@@ -92,13 +92,20 @@ js/
              surfaces, damage), crafting.js, interact.js (item→world rules), skills.js, ai.js,
              worldgen.js, map.js (A*, line of sight), entities.js
   net/       transport.js (PeerJS / manual WebRTC / BroadcastChannel + chunking), session.js (host diffing, client replica)
-  render/    renderer.js (terrain chunk cache, blob surfaces, sprites, effects)
+  render/    renderer3d.js (Three.js: instanced terrain/trees/rocks/grass, procedural creature & prop models,
+             surface layers, flames + pooled point lights, particles, raycast picking, DOM nameplates & floating text)
   ui/        hud.js (panels, drag & drop, context menus, targeting)
   main.js    title, character creation, hosting/joining, main loop
 tests/sim.test.js   headless simulation tests (npm test)
 ```
 
 The rules functions (`matchCombination`, `applyRulesFor`, `skillError`…) are pure and shared by host and clients, so the UI can preview results (combine outcome, available interactions, range/LOS) without a round trip, while the host stays authoritative.
+
+## Rendering notes
+
+- The simulation is a tile grid; the renderer maps tile `(x, y)` to world `(x+0.5, height, y+0.5)`. Clicking raycasts against creatures, props and tree/rock instances first, then the terrain heightfield.
+- Static scenery (≈12k terrain columns, ~1k trees, grass tufts) uses `InstancedMesh`, so draw calls stay low. Dynamic lights are a pool of 6 point lights assigned to the nearest fires.
+- Needs WebGL with a real GPU for smooth framerates (software rendering works but is slow).
 
 ## Known limitations (it's a prototype)
 

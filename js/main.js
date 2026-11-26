@@ -7,7 +7,7 @@ import { SKILLS } from './sim/skills.js';
 import { Game } from './sim/game.js';
 import { HostSession, ClientSession, HOST_PID } from './net/session.js';
 import { PeerHost, peerConnect, ManualHost, manualAnswer, TabsHost, tabsConnect } from './net/transport.js';
-import { Renderer } from './render/renderer.js';
+import { Renderer } from './render/renderer3d.js';
 import { UI } from './ui/hud.js';
 import { esc, randomCode, pick } from './util.js';
 
@@ -242,9 +242,9 @@ function enterGame(view) {
       else if (e.kind === 'npc') { mctx.fillStyle = '#ffd86b'; mctx.fillRect(e.x * sc - 1, e.y * sc - 1, 3, 3); }
     }
     for (const p of ps) { mctx.fillStyle = p.color; mctx.beginPath(); mctx.arc(p.x * sc, p.y * sc, p.id === view.myEid ? 3.5 : 2.5, 0, 7); mctx.fill(); if (p.id === view.myEid) { mctx.strokeStyle = '#fff'; mctx.stroke(); } }
-    const W = innerWidth / (32 * renderer.cam.zoom), H = innerHeight / (32 * renderer.cam.zoom);
+    const R = 13 / renderer.cam.zoom;
     mctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    mctx.strokeRect((renderer.cam.x - W / 2) * sc, (renderer.cam.y - H / 2) * sc, W * sc, H * sc);
+    mctx.beginPath(); mctx.arc(renderer.cam.x * sc, renderer.cam.y * sc, R * sc, 0, 7); mctx.stroke();
   };
   let last = performance.now(), lastMini = 0;
   const loop = (now) => {
