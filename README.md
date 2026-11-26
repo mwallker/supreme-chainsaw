@@ -30,6 +30,46 @@ The host's browser runs the authoritative simulation. Clients send *intents* (mo
 - The host can **save** the world (Party panel; also autosaves every minute) and **continue** later from the title screen.
 - Simulation ticks run on a Worker timer so the host keeps working when the host's tab is in the background.
 
+## The campaign: three levels
+
+| Level | Time | Encounters (last one guards the Waygate) |
+|---|---|---|
+| **I. The Greenwood Road** | day | Wolf Pack · The Bog (slimes, poison) · Bandit Scouts (oil barrels) · **The Dire Wolf** |
+| **II. Smugglers' Marsh** | dusk into night, water everywhere | Storm Cultists (rain + lightning) · Oil Depot · Cinder Imps (powder kegs) · **The Warlord** |
+| **III. The Frozen Barrow** | night; the dead see in the dark | Barrow Watch · Wisp Pools (freezing water) · The Ossuary · **The Barrow King** |
+
+Each level is generated from a fixed seed: a road runs from the start camp (Level I starts in the village with the merchant and all crafting stations) past four designed encounter sites to a Waygate. There is a rest campfire midway. Fights scale with party size: every extra player adds enemies, and a tuned multiplier sets enemy health and damage. When the boss falls, the whole party gathers at the Waygate to travel on, keeping levels and gear. An objectives panel and minimap markers track progress.
+
+## Bots & balancing
+
+**Bots for both sides** (`js/sim/bots.js`) share one utility-based brain. For every legal action it estimates expected value from:
+- hit chance (light included), resistances, armor, crits and kill bonuses;
+- statuses and friendly fire;
+- predicted surface chain reactions: oil fires, poison explosions, electrified pools, freezing, barrel blasts.
+
+It also repositions with awareness of hazards and light. Player bots act through the same action API as human clients; enemies use it as their "smart" AI (`enemyBrain: 'basic'` keeps the simple chaser for comparison). Between fights the player bots behave like players: they spend attribute points, craft bombs and potions, equip better gear, carry a torch or drink Nightsight at night, and loot.
+
+**Headless engine.** `new Game({ headless: true })` drops the clock entirely:
+- movement is applied instantly, tile by tile, so surface effects still trigger;
+- delayed effects (barrel chains, turn hand-offs) run from a queue immediately;
+- `game.runCombat()` resolves a whole fight turn by turn.
+
+This runs about **33 encounters/s on one core and ~73/s on 4 worker threads**, about 25× the old accelerated real-time loop.
+
+**Balance harness** (`tools/balance.mjs`, with workers in `tools/balance-worker.mjs`):
+
+```sh
+node tools/balance.mjs --tune 12 --runs 12     # auto-tune, write js/data/levels.js, then report
+node tools/balance.mjs --runs 12               # just evaluate → docs/BALANCE.md
+```
+
+It plays full Level I→III campaigns for party sizes 1–4 across 13 class mixes. Parties retry lost fights, as players do, and rest only at camps. Tuning works like this:
+- Each encounter's `hpMul`/`dmgMul` moves toward a target first-try win rate; HP left after winning is used only once the win rate is on target.
+- A per-party-size multiplier evens out sizes, normalised so the two kinds of knob don't drift.
+- Step sizes adapt (halving on overshoot), because boss fights are cliff-like.
+
+The report also switches one side's tactics off at a time — smart players vs the plain enemy AI, and players without item/surface tactics vs smart enemies — to show what each side's play contributes. See **[docs/BALANCE.md](docs/BALANCE.md)** for the current numbers. At the time of writing every encounter is within a few points of its target and 88% of campaigns are completed. Without item and surface tactics, players complete only 42%.
+
 ## Character creation
 
 Name, colour, one of four backgrounds, and 3 free attribute points across **Might / Finesse / Intellect / Vigor** (no D&D rules, just these).
@@ -131,6 +171,7 @@ js/
   ui/        hud.js (panels, drag & drop, context menus, targeting)
   main.js    title, character creation, hosting/joining, main loop
 tests/sim.test.js   headless simulation tests (npm test)
+tools/balance.mjs   bot-vs-bot balance harness (see above); docs/BALANCE.md is its report
 ```
 
 The rules functions (`matchCombination`, `applyRulesFor`, `skillError`…) are pure and shared by host and clients, so the UI can preview results (combine outcome, available interactions, range/LOS) without a round trip, while the host stays authoritative.

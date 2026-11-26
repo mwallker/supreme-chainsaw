@@ -4,7 +4,7 @@ import { WorldMap, encodeTiles, decodeTiles, buildIndex } from '../sim/map.js';
 
 export const PROTOCOL = 3;
 export const HOST_PID = 'host';
-const HEARTBEAT_TIMEOUT = 10000;
+const HEARTBEAT_TIMEOUT = 30000; // generous: slow machines and background tabs stall main threads
 
 const globalsOf = (s) => ({ combat: s.combat, players: s.players, recipes: s.recipes, round: s.round, spawn: s.spawn, seed: s.seed, time: s.time, level: s.level, levelInfo: s.levelInfo, activated: s.activated, victory: s.victory });
 
@@ -26,14 +26,7 @@ export class HostSession extends Emitter {
       this.rebaseCache();
       this.emit('level');
     });
-    // heartbeat: detect peers that vanished without saying goodbye
-    this.hb = setInterval(() => {
-      const now = Date.now();
-      for (const ch of this.conns.values()) {
-        if (now - ch.lastSeen > HEARTBEAT_TIMEOUT) ch.close();
-        else ch.send({ t: 'ping' });
-      }
-    }, 2000);
+    this.lastPing = 0;
   }
   attach(transport) {
     this.transports.push(transport);
@@ -106,9 +99,19 @@ export class HostSession extends Emitter {
     for (const { pid, msg } of out.priv) if (pid !== HOST_PID) this.conns.get(pid)?.send({ t: 'priv', msg });
     this.emit('state');
   }
+  /** Driven by the Worker timer (keeps running in background tabs, unlike main-thread intervals). */
   step() {
     this.game.tick();
     this.flush();
+    // heartbeat: ping clients, drop peers that vanished without saying goodbye
+    const now = Date.now();
+    if (now - this.lastPing > 2000) {
+      this.lastPing = now;
+      for (const ch of this.conns.values()) {
+        if (now - ch.lastSeen > HEARTBEAT_TIMEOUT) ch.close();
+        else ch.send({ t: 'ping' });
+      }
+    }
   }
   kick(pid) { this.conns.get(pid)?.close(); }
 }

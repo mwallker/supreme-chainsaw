@@ -28,7 +28,8 @@ export class Game {
     this.outLog = []; this.outFx = []; this.outPriv = [];
     this.pendingAggro = new Set();
     this.clock = opts.clock || (() => performance.now());
-    this.timeScale = opts.timeScale ?? 1; // <1 speeds up animations/delays (bots & balance runs)
+    this.timeScale = opts.timeScale ?? 1; // <1 speeds up animations/delays
+    this.headless = !!opts.headless; // bots/balance: instant movement, no timers, turn-driven combat
     this.enemyBrain = opts.enemyBrain || 'smart';
     this.botPlayers = new Set(); // player entity ids driven by the player bot
     if (opts.save) {
@@ -78,6 +79,7 @@ export class Game {
       S.entities[p.id] = p;
       this.dirtyIndex = true;
     }
+    this._pk = -1; // players() cache
     this.events.emit('level', i);
     this.fx({ type: 'banner', text: def.name });
     this.log(`— ${def.name} — ${def.blurb}`, 'sys');
@@ -142,13 +144,68 @@ export class Game {
     if (!r) this.rt.set(id, (r = { path: [], queued: null, next: 0, aiNext: 0, aiSteps: 0 }));
     return r;
   }
-  place(e, x, y) { e.x = x; e.y = y; this.dirtyIndex = true; }
+  /** Move an entity; keeps the spatial index up to date incrementally (no full rebuild per tile). */
+  place(e, x, y) {
+    const ix = this._index;
+    if (ix && !this.dirtyIndex && e.kind !== 'object' && e.kind !== 'npc') {
+      const ok = this.map.idx(e.x, e.y), nk = this.map.idx(x, y);
+      const a = ix.at.get(ok);
+      if (a) { const i = a.indexOf(e); if (i >= 0) a.splice(i, 1); if (!a.length) ix.at.delete(ok); }
+      let b = ix.at.get(nk);
+      if (!b) ix.at.set(nk, (b = []));
+      b.push(e);
+      if (ix.creatures.get(ok) === e) {
+        ix.creatures.delete(ok);
+        // another living creature may share the old tile (out of combat)
+        for (const o of ix.at.get(ok) || []) if (isCreature(o) && !o.dead && !o.downed && o.kind !== 'npc') { ix.creatures.set(ok, o); break; }
+      }
+      e.x = x; e.y = y;
+      if (isCreature(e) && !e.dead && !e.downed) ix.creatures.set(nk, e);
+      return;
+    }
+    e.x = x; e.y = y; this.dirtyIndex = true;
+  }
   log(text, cls = '') { const m = { text, cls }; this.outLog.push(m); this.events.emit('log', m); }
   fx(o) { this.outFx.push(o); this.events.emit('fx', o); }
   float(e, text, c) { this.fx({ type: 'float', x: e.x, y: e.y, text, c }); }
   tell(pid, msg) { if (pid) { this.outPriv.push({ pid, msg }); this.events.emit('priv', { pid, msg }); } }
-  later(ms, fn) { this.timers.push({ at: this.now() + this.ms(ms), fn }); }
-  players() { return Object.values(this.state.entities).filter((e) => e.kind === 'player'); }
+  later(ms, fn) { this.timers.push({ at: this.headless ? 0 : this.now() + this.ms(ms), fn }); }
+  /** Headless: run every queued delayed effect now, in order (effects may queue more). */
+  flushTimers() {
+    for (let guard = 0; this.timers.length && guard < 500; guard++) {
+      const t = this.timers.shift();
+      try { t.fn(); } catch (err) { console.error(err); }
+    }
+  }
+  /**
+   * Headless: resolve the current fight to the end with bots/AI on every turn — no clock, no
+   * animation waits. Returns the number of rounds fought (or null if a human player's turn came up).
+   */
+  runCombat(maxRounds = 40) {
+    for (let steps = 0; this.state.combat && steps < 20000; steps++) {
+      this.flushTimers();
+      if (this.pendingAggro.size) { const ids = [...this.pendingAggro]; this.pendingAggro.clear(); this.startCombat(ids); }
+      if (this.checkCombatEnd()) break;
+      const c = this.state.combat;
+      if (c.round > maxRounds) { this.lastRounds = c.round; this.state.combat = null; return c.round; }
+      const a = this.ent(c.active);
+      if (!a || a.dead || a.downed || (a.kind === 'player' && !a.online)) { this.endTurn(c.active); continue; }
+      if (a.kind === 'player' && !this.botPlayers.has(a.id)) return null;
+      const r = this.rtOf(a.id);
+      if (r.waitEnd) { this.endTurn(a.id); continue; }
+      let res = null;
+      try { res = a.kind === 'enemy' && this.enemyBrain !== 'smart' ? aiStep(this, a) : botStep(this, a); } catch (err) { console.error(err); }
+      if (res == null && this.state.combat?.active === a.id) this.endTurn(a.id);
+    }
+    this.flushTimers();
+    return this.lastRounds || 0;
+  }
+  players() {
+    // cached: player entities only appear via addPlayer/loadLevel (both bump nextId or swap the entity table)
+    const S = this.state;
+    if (this._pk !== S.nextId || this._pe !== S.entities) { this._pk = S.nextId; this._pe = S.entities; this._players = Object.values(S.entities).filter((e) => e.kind === 'player'); }
+    return this._players;
+  }
   creaturesAt(x, y) {
     const a = this.index.at.get(this.map.idx(x, y));
     return a ? a.filter((e) => isCreature(e) && e.kind !== 'npc' && !e.dead && !e.downed) : [];
@@ -229,6 +286,26 @@ export class Game {
     r.path = path.slice();
     r.queued = queued;
     r.next = this.now() + this.ms(30);
+    if (this.headless) { while (r.path.length) if (!this.stepAlong(e, r)) break; }
+  }
+  /** Advance one tile along e's path (surface effects apply per tile). Returns false when movement stops. */
+  stepAlong(e, r) {
+    if (e.dead || e.downed || e.st.frozen || e.st.stunned) { r.path = []; r.queued = null; return false; }
+    const [nx, ny] = r.path[0];
+    const combat = this.inCombat(e);
+    const occ = this.index.creatures.get(this.map.idx(nx, ny));
+    if (!walkable(this.map, this.index, nx, ny) || (combat && occ && occ !== e)) { r.path = []; r.queued = null; return false; }
+    const px = e.x, py = e.y;
+    this.place(e, nx, ny);
+    r.path.shift();
+    const trail = e.kind === 'enemy' && ENEMIES[e.type].trail;
+    if (trail && combat) applyElement(this, px, py, trail);
+    surfaceEffect(this, e, 'enter');
+    if (!r.path.length && r.queued) {
+      const q = r.queued; r.queued = null;
+      if (q.pid) this.handleAction(q.pid, q.a);
+    }
+    return true;
   }
   /** Ensure e is within range of (x,y); if not, walk there and re-issue the action. Returns true if ready now. */
   approach(pid, e, a, x, y, range, cost = 0, needLos = false) {
@@ -713,22 +790,9 @@ export class Game {
     for (const [id, r] of this.rt) {
       if (!r.path.length || now < r.next) continue;
       const e = this.ent(id);
-      if (!e || e.dead || e.downed || e.st.frozen || e.st.stunned) { r.path = []; r.queued = null; continue; }
-      const [nx, ny] = r.path[0];
-      const combat = this.inCombat(e);
-      const occ = this.index.creatures.get(this.map.idx(nx, ny));
-      if (!walkable(this.map, this.index, nx, ny) || (combat && occ && occ !== e)) { r.path = []; r.queued = null; continue; }
-      const px = e.x, py = e.y;
-      this.place(e, nx, ny);
-      r.path.shift();
-      r.next = now + this.ms(combat ? 170 : 135);
-      const trail = e.kind === 'enemy' && ENEMIES[e.type].trail;
-      if (trail && combat) applyElement(this, px, py, trail);
-      surfaceEffect(this, e, 'enter');
-      if (!r.path.length && r.queued) {
-        const q = r.queued; r.queued = null;
-        if (q.pid) this.handleAction(q.pid, q.a);
-      }
+      if (!e) { r.path = []; r.queued = null; continue; }
+      r.next = now + this.ms(this.inCombat(e) ? 170 : 135);
+      this.stepAlong(e, r);
     }
     // AI turn
     const c = this.state.combat;

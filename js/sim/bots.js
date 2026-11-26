@@ -8,7 +8,7 @@ import { SKILLS, skillError } from './skills.js';
 import { weaponOf, moveRange, statMult, critChance, armorOf, resistOf, throwRange, throwAp, maxAp } from './entities.js';
 import { findPath, los, walkable, isCreature } from './map.js';
 import { surfaceAt } from './rules.js';
-import { hitChance, lightMap } from './light.js';
+import { hitChance, lightMap, freezeLight, thawLight } from './light.js';
 import { cheb, circleTiles } from '../util.js';
 
 // Damage estimates for skills: [min, max, type, scaling stat]
@@ -278,7 +278,8 @@ export function candidates(G, e) {
     }
     if (safe) {
       const path = findPath(G.map, G.index, e.x, e.y, safe[0], safe[1], { blockCreatures: block, maxNodes: 800 });
-      if (path?.length) out.push({ v: danger * 1.6, ap: Math.ceil(Math.max(0, path.length - e.mp) / moveRange(e)), kind: 'move', x: safe[0], y: safe[1], path });
+      // active hazards (fire, poison, live current) are urgent; merely risky ground (water/oil a foe could ignite or electrify) is not
+      if (path?.length) out.push({ v: danger >= 5 ? danger * 1.6 : 1.5, ap: Math.ceil(Math.max(0, path.length - e.mp) / moveRange(e)), kind: 'move', x: safe[0], y: safe[1], path });
     }
   }
   // 4) throwables & consumables (players carry items)
@@ -325,7 +326,7 @@ function positionMove(G, e) {
   const foes = all.filter((c) => alive(c) && side(c) !== side(e));
   if (!foes.length) return null;
   const w = weaponOf(e);
-  const maxTiles = e.mp + e.ap * moveRange(e);
+  const maxTiles = Math.min(12, e.mp + e.ap * moveRange(e));
   if (maxTiles <= 0) return null;
   let reach = w.range;
   for (const sk of e.skills || []) { const s = SKILLS[sk.id]; if (s.target === 'tile' || s.target === 'enemy') reach = Math.max(reach, Math.min(s.range, 7)); }
@@ -377,7 +378,12 @@ export function botStep(G, e) {
   r.botSteps = (r.botSteps || 0) + 1;
   if (r.botSteps > 14 || (e.ap <= 0 && e.mp <= 0)) return null;
   r.banned ||= new Set();
-  const cands = candidates(G, e).filter((c) => c.ap <= e.ap && !r.banned.has(key(c)));
+  // bot estimates use one light snapshot per turn (actual hit rolls always use exact light)
+  const turnKey = G.state.combat ? G.state.combat.round + ':' + G.state.combat.idx : 'x';
+  if (r.lightTurn !== turnKey) { thawLight(G.state); r.lightL = lightMap(G.state, G.map); r.lightTurn = turnKey; }
+  freezeLight(G.state, G.map, r.lightL);
+  let cands;
+  try { cands = candidates(G, e).filter((c) => c.ap <= e.ap && !r.banned.has(key(c))); } finally { thawLight(G.state); }
   cands.sort((a, b) => b.v - 0.3 * b.ap - (a.v - 0.3 * a.ap));
   const best = cands[0];
   const before = JSON.stringify([e.ap, e.mp, e.x, e.y, e.inv?.length, r.path.length]);
@@ -386,7 +392,9 @@ export function botStep(G, e) {
     if (JSON.stringify([e.ap, e.mp, e.x, e.y, e.inv?.length, r.path.length]) === before) r.banned.add(key(best));
     return 600;
   }
-  const path = positionMove(G, e);
+  freezeLight(G.state, G.map, r.lightL);
+  let path;
+  try { path = positionMove(G, e); } finally { thawLight(G.state); }
   if (path) {
     if (e.kind === 'player') G.handleAction(e.pid, { type: 'move', x: path[path.length - 1][0], y: path[path.length - 1][1] });
     else { G.payMove(e, path.length); G.startPath(e, path, null); }
@@ -425,6 +433,22 @@ function exec(G, e, c) {
 export function botPrep(G, e, { lootNear = true } = {}) {
   const pid = e.pid;
   const primary = { sellsword: 'might', ranger: 'finesse', alchemist: 'intellect', elementalist: 'intellect' }[e.cls];
+  // gear up like a player would: best weapon of the same style, best armor, a shield if one hand is free
+  const wScore = (id) => { const w = ITEMS[id]?.weapon; return w ? ((w.dmg[0] + w.dmg[1]) / 2) * statMult(e, w.stat) * (w.el ? 1.15 : 1) : 0; };
+  const curW = e.eq.weapon && ITEMS[e.eq.weapon.id].weapon;
+  let bestW = null, bestS = e.eq.weapon ? wScore(e.eq.weapon.id) : 0;
+  e.inv.forEach((s, i) => {
+    const w = ITEMS[s.id].weapon;
+    if (!w || ITEMS[s.id].slot !== 'weapon' || (!!w.ranged !== !!curW?.ranged) || (w.ammo && !e.inv.some((a) => a.id === w.ammo))) return;
+    if (wScore(s.id) > bestS * 1.05) { bestS = wScore(s.id); bestW = i; }
+  });
+  if (bestW != null) G.handleAction(pid, { type: 'equip', ref: bestW });
+  for (const slot of ['armor', 'offhand']) {
+    if (slot === 'offhand' && (e.eq.weapon && ITEMS[e.eq.weapon.id].weapon?.twoHanded)) continue;
+    const cur = e.eq[slot] ? ITEMS[e.eq[slot].id].armor || 0 : 0;
+    const i = e.inv.findIndex((s) => ITEMS[s.id].slot === slot && (ITEMS[s.id].armor || 0) > cur);
+    if (i >= 0 && !(slot === 'offhand' && e.eq.offhand?.id === 'lit_torch')) G.handleAction(pid, { type: 'equip', ref: i });
+  }
   while (e.pts > 0) G.handleAction(pid, { type: 'allocate', attr: e.pts % 2 ? 'vigor' : primary });
   for (const rid of ['fire_bomb', 'healing_potion', 'frost_bomb', 'shock_bomb']) {
     for (let n = 0; n < 3; n++) { const before = e.inv.length + JSON.stringify(e.inv).length; G.handleAction(pid, { type: 'craft', recipe: rid }); if (e.inv.length + JSON.stringify(e.inv).length === before) break; }

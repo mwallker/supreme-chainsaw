@@ -340,6 +340,7 @@ export function dealDamage(G, t, amount, type, src, o = {}) {
   if (type === 'physical') dmg = Math.max(1, dmg - armorOf(t));
   dmg = Math.max(0, Math.round(dmg * mult * (o.crit ? 1.5 : 1)));
   t.hp -= dmg;
+  G.onDamage?.(src, t, dmg, type);
   G.float(t, (o.crit ? 'Crit ' : '') + dmg, DMG_COLOR[type] || '#fff');
   if (src && src !== t && !o.dot) G.fx({ type: 'hit', x: t.x, y: t.y });
   if (t.kind === 'enemy' && (src?.kind === 'player' || G.players().some((p) => Math.max(Math.abs(p.x - t.x), Math.abs(p.y - t.y)) <= 12))) G.aggro(t);

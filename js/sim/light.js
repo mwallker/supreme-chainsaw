@@ -59,20 +59,42 @@ export function lightSources(state, map) {
 }
 
 const cache = new WeakMap();
+const frozen = new WeakMap();
+const baseCache = new WeakMap();
+/** While evaluating many hypothetical actions (bots) the world doesn't change: compute light once. */
+export function freezeLight(state, map, L) { frozen.delete(state); frozen.set(state, L || lightMap(state, map)); }
+export function thawLight(state) { frozen.delete(state); }
 /** Whole-map light levels (Uint8Array, LIT/DIM/DARK), cached until anything relevant changes. */
 export function lightMap(state, map) {
+  const fz = frozen.get(state);
+  if (fz) return fz;
   const amb = ambientOf(state.time ?? START_TIME);
-  const src = lightSources(state, map);
-  const obsc = [];
-  for (const [k, s] of Object.entries(state.surfaces)) if (s.type === 'steam' || s.type === 'smoke') obsc.push(k + s.type[1]);
-  const key = amb + '|' + src.join(';') + '|' + obsc.join(',');
+  // cheap allocation-free fingerprint of everything that affects light; full rebuild only when it changes
+  let key = amb * 7919 + 17;
+  const mix = (v) => { key = (Math.imul(key, 31) + v) | 0; };
+  for (const id in state.entities) {
+    const e = state.entities[id];
+    if (e.kind === 'object') {
+      if (e.type === 'burning_tree' || ((e.type === 'campfire' || e.type === 'forge') && e.lit)) { mix(e.x); mix(e.y); mix(e.type.length); }
+    } else if (!e.dead && (e.st?.burning || e.eq?.offhand?.id === 'lit_torch' || ENEMIES[e.type]?.glow)) { mix(e.x * 1031 + e.y); mix(e.st?.burning ? 3 : 1); }
+  }
+  for (const k in state.surfaces) {
+    const s = state.surfaces[k];
+    if (s.type === 'fire' || s.e || s.type === 'steam' || s.type === 'smoke') { mix(+k); mix(s.type.length + (s.e ? 9 : 0)); }
+  }
   const c = cache.get(state);
   if (c && c.key === key && c.map === map) return c.L;
-  const W = map.W, H = map.H, L = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    const t = map.tiles[i];
-    L[i] = Math.max(0, amb - (t === T.FOREST || t === T.FLOOR ? 1 : 0));
+  const src = lightSources(state, map);
+  const W = map.W, H = map.H;
+  // ambient layer depends only on map + phase: cache it and copy
+  let b = baseCache.get(map);
+  if (!b || b.amb !== amb) {
+    const base = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) { const t = map.tiles[i]; base[i] = Math.max(0, amb - (t === T.FOREST || t === T.FLOOR ? 1 : 0)); }
+    baseCache.set(map, (b = { amb, base }));
   }
+  const L = c && c.map === map ? c.L : new Uint8Array(W * H);
+  L.set(b.base);
   for (const [sx, sy, b, d] of src) {
     for (let y = Math.max(0, sy - d); y <= Math.min(H - 1, sy + d); y++)
       for (let x = Math.max(0, sx - d); x <= Math.min(W - 1, sx + d); x++) {

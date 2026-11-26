@@ -321,6 +321,28 @@ test('a combatant who dies on their own turn does not stall combat', () => {
   assert.notEqual(G.state.combat?.active, w1.id);
 });
 
+test('headless engine: bots on both sides resolve a whole fight instantly and deterministically', async () => {
+  const { mulberry32 } = await import('../js/rng.js');
+  const play = () => {
+    const rnd = Math.random; Math.random = mulberry32(99);
+    const G = new Game({ level: 0, headless: true });
+    const ids = ['ranger', 'sellsword'].map((cls, i) => G.addPlayer('b' + i, char(cls, 'Bot' + i)).eid);
+    ids.forEach((id) => G.botPlayers.add(id));
+    const info = G.state.levelInfo.encounters[0];
+    for (const id of ids) G.place(G.ent(id), ...G.freeTileNear(info.x - 5, info.y));
+    G.startCombat(Object.values(G.state.entities).filter((e) => e.grp === info.id).map((e) => e.id));
+    const t0 = Date.now();
+    const rounds = G.runCombat(40);
+    Math.random = rnd;
+    return { rounds, over: !G.state.combat, cleared: G.encounterCleared(info.id), ms: Date.now() - t0, hp: ids.map((id) => G.ent(id).hp).join(',') };
+  };
+  const a = play(), b = play();
+  assert.ok(a.over, 'fight finished');
+  assert.ok(a.rounds >= 1);
+  assert.ok(a.ms < 2000, `fast (${a.ms}ms)`);
+  assert.deepEqual([a.rounds, a.cleared, a.hp], [b.rounds, b.cleared, b.hp], 'same seed, same fight');
+});
+
 for (const [name, fn] of tests) {
   try { await fn(); passed++; console.log('✓', name); } catch (e) { console.error('✗', name, '\n', e); process.exitCode = 1; }
 }

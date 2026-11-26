@@ -25,7 +25,7 @@ export const ENEMIES = {
     loot: [['bone', 1, 3, 1], ['gold', 4, 10, 0.7], ['iron_ingot', 1, 1, 0.3]] },
   dire_wolf: { n: 'Dire Wolf', hp: 48, move: 4, glyph: 'Ω', color: '#5e5a66', boss: true, armor: 1, darkvision: true, beast: true, attrs: { might: 6, finesse: 5, intellect: 1, vigor: 6 },
     attack: { n: 'Maul', dmg: [5, 8], type: 'physical', range: 1 }, skills: ['cleave'], xp: 90, aggro: 7, loot: [['wolf_pelt', 2, 3, 1], ['raw_meat', 2, 3, 1]] },
-  barrow_king: { n: 'The Barrow King', hp: 80, glyph: 'Ψ', color: '#bfe8ff', boss: true, armor: 3, darkvision: true, glow: [0, 3], res: { poison: 100, frost: 75, fire: -25 }, attrs: { might: 7, finesse: 3, intellect: 5, vigor: 8 },
+  barrow_king: { n: 'The Barrow King', hp: 80, glyph: 'Ψ', color: '#bfe8ff', boss: true, armor: 2, darkvision: true, glow: [0, 3], res: { poison: 100, frost: 75, fire: -25 }, attrs: { might: 7, finesse: 3, intellect: 5, vigor: 8 },
     attack: { n: 'Frostbrand', dmg: [6, 9], type: 'physical', range: 1 }, skills: ['frost_nova', 'cleave'], xp: 200, loot: [['gold', 50, 80, 1], ['frost_paste', 2, 3, 1]] },
   warlord: { n: 'Bandit Warlord', hp: 70, glyph: 'Ω', color: '#d23c3c', armor: 3, boss: true, attrs: { might: 7, finesse: 4, intellect: 2, vigor: 7 },
     attack: { n: 'Greataxe', dmg: [6, 10], type: 'physical', range: 1 }, skills: ['cleave', 'rally'], xp: 150,
