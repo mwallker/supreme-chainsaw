@@ -110,7 +110,7 @@ async function startHost(char, mode, save) {
     get index() { return game.index; },
     myEid: r.eid,
     send(a) { game.handleAction(HOST_PID, a); session.flush(); },
-    save() { localStorage.setItem(SAVE_KEY, JSON.stringify({ world: game.serialize(), hostChar: char, at: Date.now() })); },
+    save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ world: game.serialize(), hostChar: char, at: Date.now() })); return true; } catch { return false; } },
   };
   const ui = enterGame(view);
   window.__host = { game, session };

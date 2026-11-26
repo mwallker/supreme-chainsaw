@@ -463,7 +463,7 @@ export class UI {
     if (this.v.isHost) html += `<p class="subtle">Saved worlds can be resumed from the title screen. Players rejoin by using the same character name.</p>`;
     body.innerHTML = html;
     if ($('#copy-code', body)) $('#copy-code', body).onclick = () => navigator.clipboard?.writeText(n.code).then(() => this.toast('Copied!', 'info'));
-    if ($('#save-btn', body)) $('#save-btn', body).onclick = () => { this.v.save(); this.toast('World saved.', 'info'); };
+    if ($('#save-btn', body)) $('#save-btn', body).onclick = () => this.toast(this.v.save() ? 'World saved.' : 'Saving is unavailable in this browser (storage blocked).', 'info');
     $('#leave-btn', body).onclick = () => { if (confirm('Leave the game?')) location.reload(); };
     if ($('#mk-invite', body)) $('#mk-invite', body).onclick = async () => {
       const area = $('#invite-area', body);
