@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Emberwake — co-op RPG prototype</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Title -->
+  <div id="title" class="screen">
+    <div class="card title-card">
+      <h1>Emberwake</h1>
+      <p class="sub">A co-op prototype of fire, frost &amp; questionable alchemy</p>
+      <div class="menu">
+        <button id="btn-host" class="big">Host a game</button>
+        <div class="join-row">
+          <input id="join-code" placeholder="Room code" maxlength="8" autocomplete="off" spellcheck="false" />
+          <button id="btn-join" class="big">Join</button>
+        </div>
+        <button id="btn-continue" class="hidden">Continue saved world (host)</button>
+      </div>
+      <fieldset class="netmode">
+        <legend>Connection</legend>
+        <label><input type="radio" name="net" value="peerjs" checked /> <b>Online</b> <small>WebRTC peer-to-peer. A free public broker (PeerJS) only introduces players; all game traffic flows directly to the host.</small></label>
+        <label><input type="radio" name="net" value="manual" /> <b>Manual</b> <small>Exchange connection codes by copy &amp; paste. No server at all.</small></label>
+        <label><input type="radio" name="net" value="tabs" /> <b>Local tabs</b> <small>Several tabs of this browser on one computer. For testing.</small></label>
+      </fieldset>
+      <p class="hint">1–4 players. The host's browser runs the world. Play solo by hosting and not inviting anyone.</p>
+    </div>
+  </div>
+
+  <!-- Character creation -->
+  <div id="create" class="screen hidden">
+    <div class="card create-card">
+      <h2>Create your character</h2>
+      <div class="row">
+        <label class="name-label">Name <input id="cc-name" maxlength="16" autocomplete="off" /></label>
+        <button id="cc-random" title="Random name">🎲</button>
+        <div id="cc-colors"></div>
+      </div>
+      <div id="cc-classes"></div>
+      <div class="cc-bottom">
+        <div id="cc-attrs"></div>
+        <div id="cc-summary"></div>
+      </div>
+      <div class="row end">
+        <button id="cc-back">Back</button>
+        <button id="cc-go" class="big">Begin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connecting / manual signaling -->
+  <div id="connecting" class="screen hidden">
+    <div class="card conn-card">
+      <h2 id="conn-title">Connecting…</h2>
+      <div id="conn-body"></div>
+      <div class="row end"><button id="conn-cancel">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Game -->
+  <div id="game" class="hidden">
+    <canvas id="view"></canvas>
+    <div id="party"></div>
+    <div id="turnbar" class="hidden"></div>
+    <div id="topright">
+      <canvas id="minimap" width="168" height="168"></canvas>
+      <div id="netinfo"></div>
+    </div>
+    <div id="menubar">
+      <button data-panel="inventory" data-tip="Inventory (I)">🎒</button>
+      <button data-panel="craft" data-tip="Crafting &amp; recipes (C)">⚒</button>
+      <button data-panel="character" data-tip="Character (P)">☺</button>
+      <button data-panel="net" data-tip="Party &amp; connection (N)">⛓</button>
+      <button data-panel="help" data-tip="How to play (H)">?</button>
+    </div>
+    <div id="bottom">
+      <div id="apbar"></div>
+      <div id="actions"></div>
+    </div>
+    <div id="logbox">
+      <div id="log"></div>
+      <input id="chat" placeholder="Press Enter to chat" maxlength="200" autocomplete="off" />
+    </div>
+    <div id="panels"></div>
+    <div id="ctx" class="hidden"></div>
+    <div id="toasts"></div>
+  </div>
+  <div id="tip" class="hidden"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

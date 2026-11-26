@@ -1,0 +1,11 @@
+{
+  "name": "emberwake",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser prototype: co-op open-world RPG with turn-based AP combat, crafting and elemental item interactions.",
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -p 8080 .",
+    "test": "node tests/sim.test.js"
+  }
+}
