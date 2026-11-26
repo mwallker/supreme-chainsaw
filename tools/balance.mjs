@@ -50,7 +50,7 @@ export function runCampaign({ comp, seed, playerBrain = 'smart', enemyBrain = 's
   const stalls = [];
   let alive = true;
   try {
-    for (let L = 0; L < LEVELS.length && alive; L++) {
+    for (let L = 0; L < LEVELS.length; L++) {
       if (L > 0) G.loadLevel(L);
       fullRest();
       for (const enc of LEVELS[L].encounters) {
@@ -59,6 +59,9 @@ export function runCampaign({ comp, seed, playerBrain = 'smart', enemyBrain = 's
         const info = G.state.levelInfo.encounters.find((e) => e.id === enc.id);
         for (const p of party) botPrep(G, p);
         const potionsBefore = party.reduce((a, p) => a + p.inv.filter((s) => s.id === 'healing_potion').reduce((b, s) => b + s.q, 0), 0);
+        let attempts = 0, firstWin = null, win = false, rounds = 0, downs = 0;
+        while (attempts < 3 && !win) {
+        attempts++;
         for (const p of party) { const [x, y] = G.freeTileNear(info.entry[0], info.entry[1]); G.place(p, x, y); }
         for (const p of party) G.handleAction(p.pid, { type: 'move', x: info.x, y: info.y });
         let started = false, guard = 0;
@@ -71,12 +74,18 @@ export function runCampaign({ comp, seed, playerBrain = 'smart', enemyBrain = 's
           if (!started && guard > 400) { G.startCombat(Object.values(G.state.entities).filter((e) => e.grp === enc.id && !e.dead).map((e) => e.id)); }
           if (G.state.combat && G.state.combat.round > 40) { G.state.combat = null; break; }
         }
-        const win = G.encounterCleared(enc.id) && party.some((p) => !p.downed);
+        if (guard >= 20000) stalls.push(`${enc.id} seed ${seed}`);
+        win = G.encounterCleared(enc.id) && party.some((p) => !p.downed);
+        if (firstWin === null) { firstWin = win; rounds = G.lastRounds || 0; downs = downed.size; }
+        if (!win) { G.state.combat = null; fullRest(); for (const p of party) botPrep(G, p); }
+        }
+        if (!win) { // give up: clear the fight so later encounters still get samples
+          for (const e of Object.values(G.state.entities)) if (e.grp === enc.id) e.dead = true;
+          alive = false; fullRest();
+        }
         const hpLeft = party.reduce((a, p) => a + Math.max(0, p.hp), 0) / party.reduce((a, p) => a + p.maxHp, 0);
         const potionsAfter = party.reduce((a, p) => a + p.inv.filter((s) => s.id === 'healing_potion').reduce((b, s) => b + s.q, 0), 0);
-        if (guard >= 20000) stalls.push(`${enc.id} seed ${seed}`);
-        records.push({ level: L, enc: enc.id, name: enc.name, win, rounds: G.lastRounds || 0, hpLeft: win ? hpLeft : 0, downs: downed.size, potions: Math.max(0, potionsBefore - potionsAfter), size: comp.length });
-        if (!win) { alive = false; break; }
+        records.push({ level: L, enc: enc.id, name: enc.name, win: firstWin, eventual: win, attempts, rounds, hpLeft: firstWin ? hpLeft : 0, downs, potions: Math.max(0, potionsBefore - potionsAfter), size: comp.length });
         for (const p of party) { if (p.downed) { p.downed = false; p.hp = Math.max(1, Math.floor(p.maxHp * 0.25)); } }
         for (let i = 0; i < 20; i++) step();
         for (const p of party) botPrep(G, p);
@@ -96,8 +105,8 @@ export function evaluate({ runs = RUNS, playerBrain = 'smart', enemyBrain = 'sma
     camp.stalls.push(...res.stalls);
     const cs = (camp.bySize[n] ||= { runs: 0, done: 0 }); cs.runs++; if (res.completed) cs.done++;
     for (const rec of res.records) {
-      const s = (stats[rec.enc] ||= { name: rec.name, level: rec.level, reached: 0, wins: 0, rounds: 0, hp: 0, downs: 0, potions: 0, bySize: {} });
-      s.reached++; if (rec.win) { s.wins++; s.hp += rec.hpLeft; s.rounds += rec.rounds; }
+      const s = (stats[rec.enc] ||= { name: rec.name, level: rec.level, reached: 0, wins: 0, eventual: 0, rounds: 0, hp: 0, downs: 0, potions: 0, bySize: {} });
+      s.reached++; if (rec.eventual) s.eventual++; if (rec.win) { s.wins++; s.hp += rec.hpLeft; s.rounds += rec.rounds; }
       s.downs += rec.downs; s.potions += rec.potions;
       const b = (s.bySize[n] ||= { reached: 0, wins: 0 }); b.reached++; if (rec.win) b.wins++;
     }
@@ -107,17 +116,17 @@ export function evaluate({ runs = RUNS, playerBrain = 'smart', enemyBrain = 'sma
 
 const pct = (a, b) => (b ? Math.round((100 * a) / b) + '%' : '—');
 function table(res, title) {
-  const L = [`### ${title}`, '', '| Level | Encounter | Target win | Win (all) | 1p | 2p | 3p | 4p | Rounds | HP left (target) | Downs/fight | Potions/fight | Reached |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|'];
+  const L = [`### ${title}`, '', '| Level | Encounter | Target win | 1st-try win | 1p | 2p | 3p | 4p | Won within 3 tries | Rounds | HP left (target) | Downs/fight | Potions/fight |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|'];
   for (const lv of LEVELS) for (const enc of lv.encounters) {
     if (enc.checkpoint) continue;
     const s = res.stats[enc.id];
-    if (!s) { L.push(`| ${lv.name.split('.')[0]} | ${enc.name} | ${pct(enc.target, 1)} | — | | | | | | | | | 0 |`); continue; }
+    if (!s) { L.push(`| ${lv.name.split('.')[0]} | ${enc.name} | ${pct(enc.target, 1)} | — | | | | | | | | | |`); continue; }
     const by = (n) => (s.bySize[n] ? pct(s.bySize[n].wins, s.bySize[n].reached) : '—');
-    L.push(`| ${lv.name.split('.')[0]} | ${enc.name}${enc.boss ? ' (boss)' : ''} | ${pct(enc.target, 1)} | **${pct(s.wins, s.reached)}** | ${by(1)} | ${by(2)} | ${by(3)} | ${by(4)} | ${s.wins ? (s.rounds / s.wins).toFixed(1) : '—'} | ${s.wins ? pct(s.hp, s.wins) : '—'} (${pct(hpTarget(enc), 1)}) | ${(s.downs / s.reached).toFixed(2)} | ${(s.potions / s.reached).toFixed(2)} | ${s.reached} |`);
+    L.push(`| ${lv.name.split('.')[0]} | ${enc.name}${enc.boss ? ' (boss)' : ''} | ${pct(enc.target, 1)} | **${pct(s.wins, s.reached)}** | ${by(1)} | ${by(2)} | ${by(3)} | ${by(4)} | ${pct(s.eventual, s.reached)} | ${s.wins ? (s.rounds / s.wins).toFixed(1) : '—'} | ${s.wins ? pct(s.hp, s.wins) : '—'} (${pct(hpTarget(enc), 1)}) | ${(s.downs / s.reached).toFixed(2)} | ${(s.potions / s.reached).toFixed(2)} |`);
   }
   const c = res.camp;
   if (c.stalls?.length) L.push('', `⚠ Stalled fights: ${c.stalls.join(', ')}`);
-  L.push('', `Full campaign completed: **${pct(c.done, c.runs)}** of ${c.runs} runs (` + Object.entries(c.bySize).map(([n, v]) => `${n}p ${pct(v.done, v.runs)}`).join(', ') + ').', '');
+  L.push('', `Campaign completed (every fight won within 3 tries): **${pct(c.done, c.runs)}** of ${c.runs} runs (` + Object.entries(c.bySize).map(([n, v]) => `${n}p ${pct(v.done, v.runs)}`).join(', ') + ').', '');
   return L.join('\n');
 }
 
@@ -128,7 +137,7 @@ function tune(iterations) {
   const knobs = {};
   for (const lv of LEVELS) for (const enc of lv.encounters) if (!enc.checkpoint) knobs[enc.id] = enc;
   for (let it = 1; it <= iterations; it++) {
-    const res = evaluate({ runs: Math.max(3, RUNS - 2), seedBase: 5000 + it * 977 });
+    const res = evaluate({ runs: Math.max(4, RUNS - 2), seedBase: 5000 + it * 977 });
     const line = [];
     for (const [id, enc] of Object.entries(knobs)) {
       const s = res.stats[id];
@@ -137,9 +146,9 @@ function tune(iterations) {
       const hp = s.wins ? s.hp / s.wins : 0;
       // positive -> too easy -> raise difficulty. Win rate saturates near 100%, so HP left gives the gradient.
       const err = (wr - enc.target) * 2 + (hp - hpTarget(enc)) * 1.2;
-      const f = Math.max(0.75, Math.min(1.35, 1 + err));
-      enc.hpMul = +Math.max(0.4, Math.min(3, enc.hpMul * f)).toFixed(2);
-      enc.dmgMul = +Math.max(0.5, Math.min(2, enc.dmgMul * Math.sqrt(f))).toFixed(2);
+      const f = 1 + 0.6 * Math.max(-0.4, Math.min(0.4, err));
+      enc.hpMul = +Math.max(0.4, Math.min(3.5, enc.hpMul * f ** 0.55)).toFixed(2);
+      enc.dmgMul = +Math.max(0.5, Math.min(2.6, enc.dmgMul * f ** (enc.hpMul >= 3.4 ? 1 : 0.55))).toFixed(2);
       line.push(`${id} ${Math.round(wr * 100)}%/${Math.round(hp * 100)}hp→${enc.hpMul}/${enc.dmgMul}`);
     }
     // party-size fairness: nudge SIZE_HP so every party size completes the campaign about equally often
@@ -158,13 +167,13 @@ function tune(iterations) {
   console.log('Wrote tuned values to js/data/levels.js');
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
 
 function main() {
 const t0 = Date.now();
 if (TUNE) tune(TUNE);
 const out = ['# Balance report', '', `Generated by \`node tools/balance.mjs\` — ${new Date().toISOString().slice(0, 10)}. Bots play full campaigns (Level I → III) at 50× speed; ${RUNS} runs per party composition, ${Object.values(COMPS).flat().length} compositions across party sizes 1–4.`, '',
-  'Win rates are **first-attempt** and **conditional on reaching** the encounter. Parties rest only at the level start and the mid-level campfire (attrition between fights is real); downed members get back up at 25% HP after a won fight.', ''];
+  '"1st-try win" is the share of parties that win the fight on their first attempt. Like real players, a party that loses respawns at the level start, rests and retries (up to 3 tries); "won within 3 tries" counts those. Parties rest only at the level start and the mid-level campfire, so attrition between fights is real. Downed members get back up at 25% HP after a won fight. HP left is the average remaining health after a first-try win.', ''];
 const main = evaluate({});
 out.push(table(main, 'Smart player bots vs smart enemy bots (the tuning target)'));
 console.log(table(main, 'smart vs smart'));
