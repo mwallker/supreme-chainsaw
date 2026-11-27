@@ -220,3 +220,67 @@ small { color: var(--dim); }
 #objective div { margin: 1px 0; }
 #objective .done { color: var(--dim); text-decoration: line-through; }
 #objective .open { color: #7fd8ff; }
+
+/* ---------- touch & small screens ---------- */
+html, body { -webkit-tap-highlight-color: transparent; }
+#view { touch-action: none; }
+#ctx .info { font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--edge); margin-bottom: 2px; color: var(--text); max-width: 340px; }
+#ctx .info h4 { margin: 0 0 2px; font-size: 13px; }
+#ctx .info .d { color: var(--dim); }
+body.touch #ctx div.o { padding: 10px 12px; font-size: 14px; }
+body.touch .slot:hover { border-color: #4a3e30; }
+
+@media (max-width: 760px), (max-height: 500px) {
+  .screen { align-items: flex-start; padding: 12px 0; }
+  .card { padding: 16px; border-radius: 10px; }
+  .title-card h1 { font-size: 40px; }
+  .create-card { width: calc(100vw - 16px); max-height: none; }
+  #cc-classes { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cls { padding: 8px; } .cls p { font-size: 12px; }
+  .cc-bottom { grid-template-columns: 1fr; }
+  .name-label input { width: 150px; font-size: 16px; }
+  #cc-colors { margin-left: 0; }
+  .swatch { width: 30px; height: 30px; }
+  input, textarea { font-size: 16px; } /* no iOS zoom-on-focus */
+
+  #party { top: 6px; left: 6px; gap: 4px; }
+  .pf { min-width: 0; width: 148px; padding: 4px 6px 4px 4px; gap: 6px; border-radius: 8px; }
+  .pf .por { width: 28px; height: 28px; font-size: 14px; }
+  .pf .nm { font-size: 11px; } .pf .nm small, .pf .hpt { display: none; }
+  .pf .pip { width: 8px; height: 8px; }
+  .chip { font-size: 9px; }
+  #topright { right: 6px; top: 6px; gap: 4px; }
+  #minimap { width: 118px !important; }
+  #netinfo { font-size: 10.5px; max-width: 118px; padding: 3px 6px; }
+  #objective { width: 118px; font-size: 10.5px; padding: 4px 6px; }
+  #objective div:not(.next):not(.open), #objective .subtle { display: none; }
+  #game.in-combat #party, #game.in-combat #topright { top: 64px; }
+  #game.in-combat #objective { display: none; }
+  #turnbar .rnd { font-size: 10px; margin-right: 2px; }
+  #turnbar { top: 4px; max-width: calc(100vw - 12px); overflow-x: auto; padding: 4px 6px; gap: 4px; }
+  .tchip { width: 28px; height: 28px; font-size: 12px; flex: none; }
+  .tchip.act { transform: scale(1.12); }
+  #menubar { flex-direction: column; right: 6px; bottom: auto; top: 50%; transform: translateY(-40%); gap: 5px; }
+  #menubar button { width: 42px; height: 42px; font-size: 18px; }
+  #bottom { bottom: 6px; max-width: calc(100vw - 12px); gap: 4px; }
+  #actions { gap: 4px; padding: 4px; max-width: 100%; overflow-x: auto; }
+  .act { width: 48px; height: 48px; font-size: 19px; flex: none; }
+  .act.end { width: 62px; font-size: 12px; }
+  #apbar { font-size: 11px; padding: 3px 8px; gap: 5px; flex-wrap: wrap; justify-content: center; }
+  #apbar .pip { width: 12px; height: 12px; }
+  #logbox { left: 6px; right: 56px; width: auto; bottom: 124px; gap: 3px; }
+  #log { max-height: 50px; font-size: 11px; padding: 3px 6px; }
+  #chat { font-size: 16px; padding: 3px 6px; }
+  .panel { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: 100% !important; max-height: 72vh; border-radius: 14px 14px 0 0; }
+  .panel header { cursor: default; padding: 10px 12px; }
+  .panel header button { padding: 4px 12px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .slot { width: auto; height: 46px; }
+  .equip .slot, .craft-row .slot { width: 50px; height: 50px; }
+  .recipe button, .list-row button { padding: 7px 12px; }
+  #ctx { min-width: 0; max-width: 94vw; max-height: 70vh; overflow-y: auto; }
+  #ctx div.o { white-space: normal; }
+  #tip { max-width: 86vw; font-size: 12px; }
+  #toasts { top: 96px; width: calc(100vw - 24px); }
+  .targeting-hint { top: auto; bottom: 150px; max-width: calc(100vw - 24px); text-align: center; }
+}

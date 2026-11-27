@@ -155,6 +155,7 @@ Example chains: emberroot → *mortar* → ember paste → coat arrows → shoot
 | `1`–`5` | attack / skills, then click a target · `Space` end turn · `Esc` cancel |
 | `I` `C` `P` `N` `H` | inventory, crafting, character, party/connection, help |
 | `Enter` | chat · `WASD` pan · `Q`/`E` or middle-drag rotate camera · `F` recenter · `L` light map · wheel zoom · minimap click to look |
+| **Touch (phones/tablets)** | tap = click; in combat and while aiming, the first tap previews (path, AP, hit %) and a second tap on the same spot confirms · long-press = context menu (with tile info) · one finger pans, pinch zooms, twist rotates · ◎ recenter, ☀ light map · tap an empty crafting slot to add an ingredient |
 
 ## Code layout
 

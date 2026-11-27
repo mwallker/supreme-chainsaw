@@ -31,6 +31,8 @@ export class UI {
     this.shop = null;
     this.sig = {};
     this.keys = new Set();
+    this.touchMode = matchMedia('(pointer: coarse)').matches;
+    document.body.classList.toggle('touch', this.touchMode);
     this.buildPanels();
     this.bindInput();
     this.bindTips();
@@ -64,8 +66,8 @@ export class UI {
   priv(msg) {
     if (typeof msg === 'string') return this.toast(msg);
     if (msg.open === 'container') { this.container = msg.id; this.show('container'); }
-    else if (msg.open === 'shop') { this.shop = msg.id; this.show('shop'); this.show('inventory'); }
-    else if (msg.open === 'craft') { this.show('craft'); this.show('inventory'); }
+    else if (msg.open === 'shop') { this.shop = msg.id; if (!this.small()) this.show('inventory'); this.show('shop'); }
+    else if (msg.open === 'craft') { if (!this.small()) this.show('inventory'); this.show('craft'); }
     this.update(true);
   }
 
@@ -100,9 +102,15 @@ export class UI {
     this.makePanel('container', 'Container', { left: 'calc(50% - 170px)', top: '160px' }, 340);
     this.makePanel('shop', 'Merchant', { left: '240px', top: '90px' }, 380);
     this.renderHelp();
-    $$('#menubar button').forEach((b) => (b.onclick = () => this.toggle(b.dataset.panel)));
+    $$('#menubar button[data-panel]').forEach((b) => (b.onclick = () => this.toggle(b.dataset.panel)));
+    $('#menubar [data-act=center]').onclick = () => { this.r.cam.ox = this.r.cam.oy = 0; };
+    $('#menubar [data-act=light]').onclick = (ev) => { this.r.showLight = !this.r.showLight; ev.currentTarget.classList.toggle('on', this.r.showLight); this.toast(this.r.showLight ? 'Light map on: blue = dark, grey = dim.' : 'Light map off.', 'info'); };
   }
-  show(id) { this.panels[id].el.classList.remove('hidden'); this.renderPanel(id); this.syncMenu(); }
+  small() { return innerWidth < 760 || innerHeight < 500; }
+  show(id) {
+    if (this.small()) for (const k of Object.keys(this.panels)) if (k !== id && this.isOpen(k)) this.hide(k); // bottom sheets: one at a time
+    this.panels[id].el.classList.remove('hidden'); this.renderPanel(id); this.syncMenu();
+  }
   hide(id) {
     this.panels[id].el.classList.add('hidden');
     if (id === 'container') this.container = null;
@@ -111,7 +119,7 @@ export class UI {
   }
   toggle(id) { this.isOpen(id) ? this.hide(id) : this.show(id); }
   isOpen(id) { return !this.panels[id].el.classList.contains('hidden'); }
-  syncMenu() { $$('#menubar button').forEach((b) => b.classList.toggle('on', this.isOpen(b.dataset.panel))); }
+  syncMenu() { $$('#menubar button[data-panel]').forEach((b) => b.classList.toggle('on', this.isOpen(b.dataset.panel))); }
   renderPanel(id) {
     if (!this.me()) return;
     const f = { inventory: this.renderInventory, craft: this.renderCraft, character: this.renderCharacter, net: this.renderNet, container: this.renderContainer, shop: this.renderShop }[id];
@@ -193,7 +201,7 @@ export class UI {
     const boss = info.encounters.find((e) => e.boss);
     const open = !boss || !alive.has(boss.id);
     $('#objective').innerHTML = `<b>${esc(info.name)}</b>` +
-      info.encounters.map((e) => `<div class="${alive.has(e.id) ? '' : 'done'}">${alive.has(e.id) ? (e.boss ? '☠' : '⚔') : '✓'} ${esc(e.name)}${e === next ? ' <span class="subtle">← next</span>' : ''}</div>`).join('') +
+      info.encounters.map((e) => `<div class="${alive.has(e.id) ? (e === next ? 'next' : '') : 'done'}">${alive.has(e.id) ? (e.boss ? '☠' : '⚔') : '✓'} ${esc(e.name)}${e === next ? ' <span class="subtle">← next</span>' : ''}</div>`).join('') +
       `<div class="${open ? 'open' : ''}">${open ? '◈ Waygate open — gather the party there' : '◇ Waygate sealed'}</div>` +
       (S.victory ? '<div class="open">✦ Campaign complete!</div>' : '') +
       `<div class="subtle">Orange ▪ on the map: campfires to rest at.</div>`;
@@ -258,7 +266,7 @@ export class UI {
         <div class="gold">¤ ${gold}</div>
       </div>
       <div class="grid">${slots.join('')}</div>
-      <p class="subtle">Click an item for actions. <b>Drag an item onto another to combine them</b> — onto the world to use it there, onto a party member to hand it over.</p>`;
+      <p class="subtle">${this.touchMode ? 'Tap an item for everything you can do with it: use, equip, throw, <b>combine with another item</b>, use it on something in the world, give it to a friend.' : 'Click an item for actions. <b>Drag an item onto another to combine them</b> — onto the world to use it there, onto a party member to hand it over.'}</p>`;
     this.wireSlots(body);
   }
   wireSlots(root) {
@@ -336,7 +344,7 @@ export class UI {
       o.push({ ic: '⤓', label: 'Drop', fn: () => this.send({ type: 'drop', ref: +ref }) });
       if (s.q > 1) o.push({ ic: '⤓', label: 'Drop all', fn: () => this.send({ type: 'drop', ref: +ref, all: true }) });
     }
-    this.showCtx(x, y, itemName(s), o);
+    this.showCtx(x, y, itemName(s), o, this.touchMode ? this.itemTip(s) : null);
   }
 
   // ================================================================ crafting
@@ -359,7 +367,7 @@ export class UI {
     });
     const stacks = this.craftSlots.map((c) => c && stackAt(me, c.ref));
     const m = matchCombination(stacks);
-    let res = '<span class="subtle">Drag ingredients (or a weapon + coating) here. Tools like a mortar can go in too.</span>';
+    let res = `<span class="subtle">${this.touchMode ? 'Tap a slot to add an ingredient' : 'Drag ingredients here (or click a slot)'} — a weapon + coating works too, and tools like a mortar.</span>`;
     let ok = false;
     if (stacks.filter(Boolean).length >= 1) {
       if (!m) res = '<span class="need">These don\'t combine into anything known to nature.</span>';
@@ -392,7 +400,13 @@ export class UI {
     this.wireSlots(body);
     $$('[data-craft]', body).forEach((el) => {
       el.ondragstart = (ev) => ev.preventDefault();
-      el.onclick = () => { this.craftSlots[+el.dataset.craft] = null; this.renderPanel('craft'); };
+      el.onclick = (ev) => {
+        const i = +el.dataset.craft;
+        if (this.craftSlots[i]) { this.craftSlots[i] = null; this.renderPanel('craft'); return; }
+        const used = new Set(this.craftSlots.filter(Boolean).map((c) => c.ref));
+        const opts = this.usableStacks().filter(({ ref }) => !used.has(ref)).map(({ ref, s }) => ({ ic: ITEMS[s.id].i, color: ITEMS[s.id].c, label: `${esc(itemName(s))}${s.q > 1 ? ' ×' + s.q : ''}`, fn: () => this.setCraftSlot(i, ref) }));
+        if (opts.length) this.showCtx(ev.clientX, ev.clientY, 'Put in slot', opts);
+      };
     });
     $('#combine-btn', body).onclick = () => {
       const refs = this.craftSlots.filter(Boolean).map((c) => c.ref);
@@ -443,8 +457,9 @@ export class UI {
     const gold = countItem(me, 'gold');
     body.innerHTML = `<p class="subtle">"Flasks, fuses and fixings. Mind the oil." — Gold: <b class="gold">¤ ${gold}</b></p>` +
       SHOP.map(([id, price]) => { const q = id === 'arrows' ? 10 : 1; return `<div class="list-row" data-tip="${esc(this.itemTip({ id, q }))}"><span class="ic" style="color:${ITEMS[id].c}">${ITEMS[id].i}</span><span class="nm">${q > 1 ? q + '× ' : ''}${ITEMS[id].n}</span><span class="gold">${price * q}g</span><button data-b="${id}" data-q="${q}" ${gold >= price * q ? '' : 'disabled'}>Buy</button></div>`; }).join('') +
-      `<p class="subtle">To sell: click an item in your inventory → Sell.</p>`;
+      `<h4 style="margin:10px 0 4px">Sell</h4>` + (me.inv.map((s, i) => (s.id === 'gold' ? '' : `<div class="list-row"><span class="ic" style="color:${ITEMS[s.id].c}">${ITEMS[s.id].i}</span><span class="nm">${esc(itemName(s))}${s.q > 1 ? ' ×' + s.q : ''}</span><span class="gold">${sellPrice(s.id)}g</span><button data-s="${i}">Sell</button></div>`)).join('') || '<p class="subtle">Nothing to sell.</p>');
     $$('button[data-b]', body).forEach((b) => (b.onclick = () => this.send({ type: 'buy', npc: this.shop, id: b.dataset.b, q: +b.dataset.q })));
+    $$('button[data-s]', body).forEach((b) => (b.onclick = () => this.send({ type: 'sell', npc: this.shop, ref: +b.dataset.s })));
   }
 
   // ================================================================ net & help
@@ -484,6 +499,10 @@ export class UI {
       <ul><li><b>Left-click</b> ground to walk; enemies to attack; chests, bushes, the merchant etc. to interact. With an axe/pickaxe in your bags, clicking a tree/rock chops/mines it.</li>
       <li><b>Right-click anything</b> for every option — including <b>using any of your items on it</b>.</li>
       <li><kbd>I</kbd> inventory · <kbd>C</kbd> crafting · <kbd>P</kbd> character · <kbd>N</kbd> party · <kbd>H</kbd> help · <kbd>Enter</kbd> chat · <kbd>WASD</kbd> pan · <kbd>Q</kbd>/<kbd>E</kbd> or middle-drag to rotate the camera · <kbd>F</kbd> recenter · wheel to zoom</li></ul>
+      <h3>Touch controls</h3>
+      <ul><li><b>Tap</b> to walk, attack or interact. In combat (and when aiming a skill) the first tap shows the path, AP cost and hit chance — <b>tap the same spot again</b> to confirm.</li>
+      <li><b>Long-press</b> anything for every option, including using your items on it (the touch version of right-click).</li>
+      <li><b>One finger</b> drags the camera, <b>two fingers</b> pinch to zoom and twist to rotate. ◎ recentres, ☀ shows the light map. Tap an item for its actions; tap an empty crafting slot to add an ingredient.</li></ul>
       <h3>Turn-based combat</h3>
       <ul><li>Combat starts when enemies spot you (or you attack). Every action costs <b>AP</b>: you get +4 per turn and can bank up to 6.</li>
       <li>Moving costs 1 AP per ${3} tiles. Attacks 2 AP, throws 2 AP, items 1 AP. <kbd>1</kbd>–<kbd>5</kbd> pick attack/skills, <kbd>Space</kbd> ends your turn.</li>
@@ -559,12 +578,15 @@ export class UI {
     const lv = lightAt(v.state, v.map, x, y);
     L.push(`<span class="d">${TILES[v.map.tile(x, y)].n}${s?.base && !s.e ? ' (water)' : ''}</span> · <span style="color:${['#7f8cff', '#c9b98a', '#ffe08a'][lv]}">${LIGHT_ICONS[lv]} ${LIGHT_NAMES[lv]}${lv < 2 ? ` (${LIGHT_PENALTY[lv]}% to hit targets here)` : ''}</span>`);
     if (this.pathInfo) L.push(this.pathInfo);
-    if (this.targetInfo) L.push(this.targetInfo);
+    if (this.targetInfo) L.push(this.targetInfo.replace('Left-click: attack', this.touchMode ? 'Tap again: attack' : 'Left-click: attack'));
+    if (this.touchMode && this.armed === `${x},${y}`) L.push(`<b style="color:#ffd86b">Tap again to ${this.targeting ? 'confirm' : 'do it'} · long-press for options</b>`);
     return L.join('<hr style="border:0;border-top:1px solid #5b4a36;margin:4px 0">');
   }
   bindTips() {
     const tip = $('#tip');
+    document.addEventListener('touchstart', (ev) => { if (ev.target !== this.r.cv) tip.classList.add('hidden'); }, { passive: true });
     document.addEventListener('mousemove', (ev) => {
+      if (this.touchMode) return; // taps fire emulated mouse events; touch gets info via taps and long-press instead
       const el = ev.target.closest?.('[data-tip]');
       if (el && el.dataset.tip) this.showTip(el.dataset.tip, ev.clientX, ev.clientY);
       else if (ev.target !== this.r.cv) tip.classList.add('hidden');
@@ -580,9 +602,9 @@ export class UI {
   }
 
   // ================================================================ context menu
-  showCtx(x, y, title, opts) {
+  showCtx(x, y, title, opts, info) {
     const c = $('#ctx');
-    c.innerHTML = (title ? `<div class="h">${esc(title)}</div>` : '') + opts.map((o, i) => `<div class="o ${o.dis ? 'dis' : ''}" data-i="${i}"><span class="ic" style="color:${o.color || '#eadfcb'}">${o.ic || '•'}</span> ${o.label}</div>`).join('');
+    c.innerHTML = (title ? `<div class="h">${esc(title)}</div>` : '') + (info ? `<div class="info">${info}</div>` : '') + opts.map((o, i) => `<div class="o ${o.dis ? 'dis' : ''}" data-i="${i}"><span class="ic" style="color:${o.color || '#eadfcb'}">${o.ic || '•'}</span> ${o.label}</div>`).join('');
     c.classList.remove('hidden');
     c.style.left = Math.min(innerWidth - c.offsetWidth - 6, x) + 'px';
     c.style.top = Math.min(innerHeight - c.offsetHeight - 6, y) + 'px';
@@ -620,7 +642,7 @@ export class UI {
     if (walkable(v.map, v.index, x, y)) o.push({ ic: '➜', label: 'Move here', fn: () => this.send({ type: 'move', x, y }) });
     o.push({ ic: '◎', label: 'Ping (mark for party)', fn: () => this.send({ type: 'ping', x, y }) });
     const title = at[0] ? (at[0].kind === 'object' ? objName(at[0]) : at[0].name) : TILES[v.map.tile(x, y)].n;
-    this.showCtx(sx, sy, title, o);
+    this.showCtx(sx, sy, title, o, this.touchMode ? this.tileTip(x, y) : null);
   }
 
   // ================================================================ targeting
@@ -735,6 +757,9 @@ export class UI {
       const foe = this.hostileAt(x, y);
       if (foe) this.targetInfo = `Left-click: attack · ${this.hitHtml(me, foe, weaponOf(me).ranged ? 'ranged' : 'melee')}`;
     }
+    if (this.touchMode && !this.armed && performance.now() > (this.tipUntil || 0) && this.mouseOnCanvas) {
+      this.mouseOnCanvas = false; this.r.hover = null; $('#tip').classList.add('hidden');
+    }
     if (this.mouseOnCanvas && $('#ctx').classList.contains('hidden')) {
       const k = `${x},${y}`;
       const now = performance.now();
@@ -742,8 +767,83 @@ export class UI {
     }
   }
 
+  // ================================================================ touch
+  bindTouch() {
+    const cv = this.r.cv;
+    let t0 = null, longTimer = null, pinch = null, panned = false;
+    const pt = (t) => ({ x: t.clientX, y: t.clientY });
+    cv.addEventListener('touchstart', (ev) => {
+      ev.preventDefault(); // no emulated mouse events, no page zoom
+      if (!this.touchMode) { this.touchMode = true; document.body.classList.add('touch'); }
+      this.hideCtx();
+      clearTimeout(longTimer);
+      if (ev.touches.length === 1) {
+        const p = pt(ev.touches[0]);
+        t0 = { ...p, last: p };
+        panned = false;
+        longTimer = setTimeout(() => { if (t0 && !panned) { t0.long = true; this.longPress(t0.x, t0.y); } }, 480);
+      } else if (ev.touches.length === 2) {
+        t0 = null;
+        const a = pt(ev.touches[0]), b = pt(ev.touches[1]);
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), zoom: this.r.cam.zoom, yaw: this.r.cam.yaw };
+      }
+    }, { passive: false });
+    cv.addEventListener('touchmove', (ev) => {
+      ev.preventDefault();
+      if (ev.touches.length === 2 && pinch) {
+        const a = pt(ev.touches[0]), b = pt(ev.touches[1]);
+        this.r.cam.zoom = Math.max(0.5, Math.min(2.2, (pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.d));
+        this.r.cam.yaw = pinch.yaw - (Math.atan2(b.y - a.y, b.x - a.x) - pinch.ang);
+        return;
+      }
+      if (ev.touches.length === 1 && t0) {
+        const p = pt(ev.touches[0]);
+        if (!panned && Math.hypot(p.x - t0.x, p.y - t0.y) > 12) { panned = true; clearTimeout(longTimer); }
+        if (panned) {
+          const k = 13 / innerHeight / this.r.cam.zoom;
+          this.r.pan(-(p.x - t0.last.x) * k, -(p.y - t0.last.y) * k);
+          t0.last = p;
+        }
+      }
+    }, { passive: false });
+    cv.addEventListener('touchend', (ev) => {
+      ev.preventDefault();
+      clearTimeout(longTimer);
+      if (!ev.touches.length) pinch = null;
+      if (!t0 || panned || t0.long || ev.touches.length) { if (!ev.touches.length) t0 = null; return; }
+      const { x, y } = t0;
+      t0 = null;
+      this.tap(x, y);
+    }, { passive: false });
+    cv.addEventListener('touchcancel', () => { clearTimeout(longTimer); t0 = null; pinch = null; });
+  }
+  /** Tap = click. In combat (your turn) and while targeting, the first tap previews (path, AP, hit %), the second confirms. */
+  tap(sx, sy) {
+    const [x, y] = this.r.screenToTile(sx, sy);
+    this.mouse = { x: sx, y: sy };
+    this.mouseOnCanvas = true;
+    this.tipKey = null;
+    this.tipUntil = performance.now() + 2500;
+    if (this.picking != null) { this.picking = null; this.renderPanel('inventory'); }
+    const key = `${x},${y}`;
+    const needsConfirm = this.targeting || (this.inCombat() && this.myTurn());
+    if (needsConfirm && this.armed !== key) { this.armed = key; return; }
+    this.armed = null;
+    if (this.targeting) return this.confirmTarget(x, y, sx, sy);
+    this.defaultClick(x, y);
+  }
+  longPress(sx, sy) {
+    this.armed = null;
+    if (navigator.vibrate) try { navigator.vibrate(15); } catch { /* ignore */ }
+    if (this.targeting) { this.cancelTargeting(); this.toast('Targeting cancelled.', 'info'); return; }
+    const [x, y] = this.r.screenToTile(sx, sy);
+    this.mouse = { x: sx, y: sy };
+    this.worldMenu(sx, sy, x, y);
+  }
+
   // ================================================================ input
   bindInput() {
+    this.bindTouch();
     const cv = this.r.cv;
     cv.addEventListener('mousemove', (ev) => { this.mouse = { x: ev.clientX, y: ev.clientY }; this.mouseOnCanvas = true; });
     cv.addEventListener('mouseleave', () => { this.mouseOnCanvas = false; $('#tip').classList.add('hidden'); });

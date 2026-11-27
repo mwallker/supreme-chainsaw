@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Emberwake — co-op RPG prototype</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -76,6 +76,8 @@
       <button data-panel="character" data-tip="Character (P)">☺</button>
       <button data-panel="net" data-tip="Party &amp; connection (N)">⛓</button>
       <button data-panel="help" data-tip="How to play (H)">?</button>
+      <button data-act="center" data-tip="Recentre camera (F)">◎</button>
+      <button data-act="light" data-tip="Light map (L)">☀</button>
     </div>
     <div id="bottom">
       <div id="apbar"></div>
@@ -83,7 +85,7 @@
     </div>
     <div id="logbox">
       <div id="log"></div>
-      <input id="chat" placeholder="Press Enter to chat" maxlength="200" autocomplete="off" />
+      <input id="chat" placeholder="Chat (Enter)" maxlength="200" autocomplete="off" />
     </div>
     <div id="panels"></div>
     <div id="ctx" class="hidden"></div>

@@ -72,8 +72,11 @@ export class Renderer {
     this.hover = null;
     this.overlay = null;
     this.shake = 0;
-    this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.gl.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+    // phones/tablets: lower resolution, no MSAA, smaller shadow map, less grass
+    this.lowPower = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
+    this.gl = new THREE.WebGLRenderer({ canvas, antialias: !this.lowPower, powerPreference: 'high-performance' });
+    this.gl.setPixelRatio(Math.min(this.lowPower ? 1.5 : 2, devicePixelRatio || 1));
+    if (Math.min(innerWidth, innerHeight) < 600) this.cam.zoom = 0.8;
     this.gl.shadowMap.enabled = true;
     this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
     this.gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -87,7 +90,7 @@ export class Renderer {
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#fff0d8', 2.6);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(this.lowPower ? 1024 : 2048, this.lowPower ? 1024 : 2048);
     Object.assign(this.sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 80 });
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
@@ -230,7 +233,7 @@ export class Renderer {
         C.set(TILE_COL[t] || TILES[t].c).multiplyScalar(t === T.MOUNTAIN || t === T.ROCKY || t === T.WALL ? 0.85 + h0 * 0.25 : 0.96 + h0 * 0.08);
         if (t === T.MOUNTAIN && h > 2) C.lerp(new THREE.Color('#e9edf0'), 0.35);
         mesh.setColorAt(i++, C);
-        if ((t === T.GRASS || t === T.FOREST) && h0 < 0.55) {
+        if ((t === T.GRASS || t === T.FOREST) && h0 < (this.lowPower ? 0.3 : 0.55)) {
           const n = 1 + Math.floor(hash(x, y, 13) * 3);
           for (let k = 0; k < n; k++) tuft.add(x + 0.15 + hash(x, y, 20 + k) * 0.7, h, y + 0.15 + hash(x, y, 30 + k) * 0.7, 1, 0.7 + hash(x, y, 40 + k) * 0.8, 1, 0, C.set(TILES[t].c).multiplyScalar(1.25 + hash(x, y, 50 + k) * 0.3).getHex());
           if (t === T.GRASS && hash(x, y, 21) < 0.08) flower.add(x + 0.2 + hash(x, y, 22) * 0.6, h + 0.08, y + 0.2 + hash(x, y, 23) * 0.6, 1, 1, 1, 0, ['#f3e37a', '#f7a8c9', '#ffffff', '#b9a4ff'][Math.floor(hash(x, y, 24) * 4)]);
