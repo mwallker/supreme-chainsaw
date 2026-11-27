@@ -1,6 +1,6 @@
 // In-game UI: HUD, panels, input, targeting, context menus. Works identically for host and clients
 // through the `view` object: { state, map, index, myEid, isHost, send(action), net }.
-import { ITEMS, COAT, itemName, SHOP, sellPrice } from '../data/items.js';
+import { ITEMS, COAT, itemName, SHOP, sellPrice, RARITY, rarityOf, itemKind } from '../data/items.js';
 import { OBJECTS, objName } from '../data/objects.js';
 import { ENEMIES } from '../data/enemies.js';
 import { CLASSES, ATTRS } from '../data/classes.js';
@@ -72,13 +72,13 @@ export class UI {
   }
 
   // ================================================================ panels
-  makePanel(id, title, pos, width) {
+  makePanel(id, title, pos, width, icon = '') {
     const p = document.createElement('div');
     p.className = 'panel hidden';
     p.id = 'panel-' + id;
     p.style.width = width + 'px';
     Object.assign(p.style, pos);
-    p.innerHTML = `<header><span class="t">${title}</span><button class="x">✕</button></header><div class="body"></div>`;
+    p.innerHTML = `<header>${icon ? `<span class="hic">${icon}</span>` : ''}<span class="t">${title}</span><button class="x" aria-label="Close" title="Close"></button></header><div class="body"></div>`;
     $('#panels').appendChild(p);
     $('.x', p).onclick = () => this.hide(id);
     // drag
@@ -94,9 +94,9 @@ export class UI {
     return p;
   }
   buildPanels() {
-    this.makePanel('inventory', 'Inventory', { right: '64px', top: '200px' }, 412);
-    this.makePanel('craft', 'Crafting', { left: '240px', top: '90px' }, 430);
-    this.makePanel('character', 'Character', { left: '240px', top: '90px' }, 380);
+    this.makePanel('inventory', 'Backpack', { right: '64px', top: '150px' }, 512, '🎒');
+    this.makePanel('craft', 'Crafting', { left: '240px', top: '90px' }, 460, '⚒');
+    this.makePanel('character', 'Character', { left: '240px', top: '70px' }, 400);
     this.makePanel('help', 'How to play', { left: 'calc(50% - 300px)', top: '60px' }, 600);
     this.makePanel('net', 'Party & Connection', { right: '64px', top: '200px' }, 380);
     this.makePanel('container', 'Container', { left: 'calc(50% - 170px)', top: '160px' }, 340);
@@ -248,25 +248,28 @@ export class UI {
   }
 
   // ================================================================ inventory
-  slotHtml(s, ref, extra = '') {
-    if (!s) return `<div class="slot empty" data-ref="${ref}" ${extra}></div>`;
+  slotHtml(s, ref, extra = '', ph = '') {
+    if (!s) return `<div class="slot empty" data-ref="${ref}" ${extra}>${ph ? `<span class="ph">${ph}</span>` : ''}</div>`;
     const d = ITEMS[s.id];
     const coat = s.d?.coat ? `coat" style="--coat:${COAT[s.d.coat].c}` : '';
     const pick = this.picking === String(ref) ? 'picking' : '';
-    return `<div class="slot ${coat} ${pick}" draggable="true" data-ref="${ref}" data-tip="${esc(this.itemTip(s))}" ${extra}><span style="color:${d.c}">${d.i}</span>${s.q > 1 ? `<span class="q">${s.q}</span>` : ''}</div>`;
+    return `<div class="slot r-${rarityOf(s)} ${coat} ${pick}" draggable="true" data-ref="${ref}" data-tip="${esc(this.itemTip(s))}" ${extra}><span class="g" style="color:${d.c}">${d.i}</span>${s.q > 1 ? `<span class="q">${s.q}</span>` : ''}</div>`;
+  }
+  // small item icon on a slot sprite, for list rows (shop, loot, recipes)
+  iconHtml(id, cls = 'ic') {
+    const d = ITEMS[id];
+    return `<span class="${cls} mini r-${rarityOf({ id })}" style="color:${d.c}">${d.i}</span>`;
   }
   renderInventory(body) {
     const me = this.me();
     const gold = countItem(me, 'gold');
     const slots = [];
     for (let i = 0; i < 32; i++) slots.push(this.slotHtml(me.inv[i], me.inv[i] ? i : '', ''));
+    const used = me.inv.filter(Boolean).length;
     body.innerHTML = `
-      <div class="equip">
-        ${['weapon', 'offhand', 'armor'].map((s) => `<div>${this.slotHtml(me.eq[s], 'eq:' + s).replace('class="slot', `data-eslot="${s}" class="slot`)}<div class="subtle" style="text-align:center;font-size:10px">${s}</div></div>`).join('')}
-        <div class="gold">¤ ${gold}</div>
-      </div>
       <div class="grid">${slots.join('')}</div>
-      <p class="subtle">${this.touchMode ? 'Tap an item for everything you can do with it: use, equip, throw, <b>combine with another item</b>, use it on something in the world, give it to a friend.' : 'Click an item for actions. <b>Drag an item onto another to combine them</b> — onto the world to use it there, onto a party member to hand it over.'}</p>`;
+      <div class="inv-foot"><span class="subtle">${used} / 32 slots</span><span class="gold">¤ ${gold}</span></div>
+      <p class="subtle">${this.touchMode ? 'Tap an item for everything you can do with it: use, equip, throw, <b>combine with another item</b>, use it on something in the world, give it to a friend.' : 'Click an item for actions. <b>Drag an item onto another to combine them</b> — onto the world to use it there, onto a party member to hand it over, onto the character sheet (P) to equip it.'}</p>`;
     this.wireSlots(body);
   }
   wireSlots(root) {
@@ -385,7 +388,7 @@ export class UI {
       const miss = recipeMissing(this.S, me, r);
       const ing = Object.entries(r.in).map(([id, q]) => `<span class="${countItem(me, id) >= q ? 'have' : 'need'}">${q}× ${ITEMS[id].n}</span>`).join(' + ');
       const req = [r.tool && `tool: ${toolName(r.tool)}`, r.station && `at ${OBJECTS[r.station].n}`].filter(Boolean).join(', ');
-      return `<div class="recipe" data-tip="${esc(this.itemTip({ id: oid, q: oq }))}"><span class="ri" style="color:${od.c}">${od.i}</span><span class="rt"><b>${oq > 1 ? oq + '× ' : ''}${od.n}</b><br>${ing}${req ? ` <span class="subtle">(${req})</span>` : ''}</span><button data-r="${r.id}" ${miss.length ? 'disabled' : ''}>Craft</button></div>`;
+      return `<div class="recipe" data-tip="${esc(this.itemTip({ id: oid, q: oq }))}">${this.iconHtml(oid, 'ri')}<span class="rt"><b>${oq > 1 ? oq + '× ' : ''}${od.n}</b><br>${ing}${req ? ` <span class="subtle">(${req})</span>` : ''}</span><button data-r="${r.id}" ${miss.length ? 'disabled' : ''}>Craft</button></div>`;
     };
     body.innerHTML = `
       <div class="craft-row">
@@ -394,7 +397,7 @@ export class UI {
       <div class="craft-row"><div class="result ${ok ? 'ok' : ''}">${res}</div><button id="combine-btn" class="big" ${ok && this.canAct() ? '' : 'disabled'}>Combine</button></div>
       <div class="tabs"><b style="flex:1">Recipe book</b><span class="subtle">${known.length}/${RECIPES.length} discovered</span></div>
       <div class="recipes">${known.map(rrow).join('')}
-      ${unknown.map((r) => `<div class="recipe unknown"><span class="ri">?</span><span class="rt">??? — <i>${esc(r.hint)}</i></span></div>`).join('')}</div>`;
+      ${unknown.map((r) => `<div class="recipe unknown"><span class="ri mini">?</span><span class="rt">??? — <i>${esc(r.hint)}</i></span></div>`).join('')}</div>`;
     // craft slots: always droppable even when empty
     $$('[data-craft]', body).forEach((el) => el.setAttribute('data-ref', this.craftSlots[+el.dataset.craft]?.ref ?? ''));
     this.wireSlots(body);
@@ -420,23 +423,39 @@ export class UI {
   renderCharacter(body) {
     const me = this.me();
     const w = weaponOf(me);
+    const eq = (slot, ph, label) => `<div class="doll-slot">${this.slotHtml(me.eq[slot], 'eq:' + slot, `data-eslot="${slot}"`, ph)}<small>${label}</small></div>`;
+    const cls = CLASSES[me.cls];
     body.innerHTML = `
-      <div style="display:flex;gap:10px;align-items:center">
-        <div class="pf" style="min-width:0;border:none;background:none;padding:0"><div class="por" style="background:${me.color};width:52px;height:52px;font-size:24px">${CLASSES[me.cls].glyph}</div></div>
-        <div style="flex:1"><b style="font-size:17px">${esc(me.name)}</b><br><span class="subtle">Level ${me.level} ${CLASSES[me.cls].n}</span>
-        <div class="bar xp"><i style="width:${me.xp / me.level}%"></i></div><span class="subtle">${me.xp} / ${me.level * 100} XP</span></div>
+      <div class="cs-head">
+        <h2>${esc(me.name)}</h2>
+        <div class="lvl"><span>Level ${me.level} ${cls.n}</span></div>
       </div>
-      <h4 style="margin:12px 0 4px">Attributes ${me.pts ? `<span class="have">(${me.pts} points to spend)</span>` : ''}</h4>
-      ${Object.entries(ATTRS).map(([k, a]) => `<div class="attr-row"><span class="an">${a.n}</span><span class="av">${me.attrs[k]}</span>${me.pts ? `<button data-a="${k}">+</button>` : ''}<small>${a.d}</small></div>`).join('')}
-      <div class="stats">
-        <span>Health: <b>${me.hp}/${me.maxHp}</b></span><span>Armor: <b>${armorOf(me)}</b></span>
-        <span>AP: <b>6 max, +4/turn</b></span><span>Move: <b>${moveRange(me)} tiles/AP</b></span>
-        <span>Weapon: <b>${w.dmg.map((d) => Math.round(d * statMult(me, w.stat))).join('-')}</b> ${w.type || 'physical'}</span><span>Crit: <b>${Math.round(critChance(me) * 100)}%</b></span>
-        <span>Throw range: <b>${throwRange(me)}</b></span><span>Throw cost: <b>${throwAp(me)} AP</b></span>
+      <div class="doll">
+        <div class="doll-col">${eq('armor', '⛊', 'Armor')}</div>
+        <div class="doll-fig" style="--pc:${me.color}">
+          <div class="fig-glyph">${cls.glyph}</div>
+          <div class="fig-base"></div>
+          <div class="fig-hp"><div class="bar"><i style="width:${(100 * me.hp) / me.maxHp}%"></i></div><small>${me.hp} / ${me.maxHp} HP</small></div>
+        </div>
+        <div class="doll-col">${eq('weapon', '⚔', 'Weapon')}${eq('offhand', '⛉', 'Off-hand')}</div>
       </div>
-      <h4 style="margin:12px 0 4px">Skills</h4>
-      ${me.skills.map((sk) => { const s = SKILLS[sk.id]; return `<div class="skill-row"><span class="ic" style="color:${s.c}">${s.i}</span><div><b>${s.n}</b> <span class="subtle">${s.ap} AP · cd ${s.cd}</span><br>${esc(s.d)}</div></div>`; }).join('')}
-      ${me.passive === 'quick_toss' ? '<div class="skill-row"><span class="ic">➚</span><div><b>Quick Toss</b> <span class="subtle">passive</span><br>Throwing items costs only 1 AP.</div></div>' : ''}`;
+      <div class="xp-row"><div class="bar xp"><i style="width:${me.xp / me.level}%"></i></div><small>${me.xp} / ${me.level * 100} XP</small></div>
+      <div class="sect">
+        <h4>Attributes ${me.pts ? `<span class="have">(${me.pts} points to spend)</span>` : ''}</h4>
+        ${Object.entries(ATTRS).map(([k, a]) => `<div class="attr-row"><span class="an">${a.n}</span><span class="av">${me.attrs[k]}</span>${me.pts ? `<button data-a="${k}">+</button>` : ''}<small>${a.d}</small></div>`).join('')}
+      </div>
+      <div class="sect stats">
+        <span>Health <b>${me.hp}/${me.maxHp}</b></span><span>Armor <b>${armorOf(me)}</b></span>
+        <span>AP <b>6 max, +4/turn</b></span><span>Move <b>${moveRange(me)} tiles/AP</b></span>
+        <span>Weapon <b>${w.dmg.map((d) => Math.round(d * statMult(me, w.stat))).join('–')}</b> ${w.type || 'physical'}</span><span>Crit <b>${Math.round(critChance(me) * 100)}%</b></span>
+        <span>Throw range <b>${throwRange(me)}</b></span><span>Throw cost <b>${throwAp(me)} AP</b></span>
+      </div>
+      <div class="sect">
+        <h4>Skills</h4>
+        ${me.skills.map((sk) => { const s = SKILLS[sk.id]; return `<div class="skill-row"><span class="ic mini" style="color:${s.c}">${s.i}</span><div><b>${s.n}</b> <span class="subtle">${s.ap} AP · cd ${s.cd}</span><br>${esc(s.d)}</div></div>`; }).join('')}
+        ${me.passive === 'quick_toss' ? '<div class="skill-row"><span class="ic mini">➚</span><div><b>Quick Toss</b> <span class="subtle">passive</span><br>Throwing items costs only 1 AP.</div></div>' : ''}
+      </div>`;
+    this.wireSlots(body);
     $$('button[data-a]', body).forEach((b) => (b.onclick = () => this.send({ type: 'allocate', attr: b.dataset.a })));
   }
 
@@ -447,7 +466,7 @@ export class UI {
     this.panels.container.el.querySelector('.t').textContent = c.kind === 'enemy' ? `${c.name} (remains)` : objName(c);
     const items = c.items || [];
     body.innerHTML = items.length
-      ? items.map((s, i) => `<div class="list-row" data-tip="${esc(this.itemTip(s))}"><span class="ic" style="color:${ITEMS[s.id].c}">${ITEMS[s.id].i}</span><span class="nm">${esc(itemName(s))}${s.q > 1 ? ' ×' + s.q : ''}</span><button data-i="${i}">Take</button></div>`).join('') + `<div class="row end"><button id="take-all" class="big">Take all</button></div>`
+      ? items.map((s, i) => `<div class="list-row" data-tip="${esc(this.itemTip(s))}">${this.iconHtml(s.id)}<span class="nm">${esc(itemName(s))}${s.q > 1 ? ' ×' + s.q : ''}</span><button data-i="${i}">Take</button></div>`).join('') + `<div class="row end"><button id="take-all" class="big">Take all</button></div>`
       : '<p class="subtle">Empty.</p>';
     $$('button[data-i]', body).forEach((b) => (b.onclick = () => this.send({ type: 'take', from: c.id, idx: +b.dataset.i })));
     if ($('#take-all', body)) $('#take-all', body).onclick = () => this.send({ type: 'take', from: c.id, all: true });
@@ -456,8 +475,8 @@ export class UI {
     const me = this.me();
     const gold = countItem(me, 'gold');
     body.innerHTML = `<p class="subtle">"Flasks, fuses and fixings. Mind the oil." — Gold: <b class="gold">¤ ${gold}</b></p>` +
-      SHOP.map(([id, price]) => { const q = id === 'arrows' ? 10 : 1; return `<div class="list-row" data-tip="${esc(this.itemTip({ id, q }))}"><span class="ic" style="color:${ITEMS[id].c}">${ITEMS[id].i}</span><span class="nm">${q > 1 ? q + '× ' : ''}${ITEMS[id].n}</span><span class="gold">${price * q}g</span><button data-b="${id}" data-q="${q}" ${gold >= price * q ? '' : 'disabled'}>Buy</button></div>`; }).join('') +
-      `<h4 style="margin:10px 0 4px">Sell</h4>` + (me.inv.map((s, i) => (s.id === 'gold' ? '' : `<div class="list-row"><span class="ic" style="color:${ITEMS[s.id].c}">${ITEMS[s.id].i}</span><span class="nm">${esc(itemName(s))}${s.q > 1 ? ' ×' + s.q : ''}</span><span class="gold">${sellPrice(s.id)}g</span><button data-s="${i}">Sell</button></div>`)).join('') || '<p class="subtle">Nothing to sell.</p>');
+      SHOP.map(([id, price]) => { const q = id === 'arrows' ? 10 : 1; return `<div class="list-row" data-tip="${esc(this.itemTip({ id, q }))}">${this.iconHtml(id)}<span class="nm">${q > 1 ? q + '× ' : ''}${ITEMS[id].n}</span><span class="gold">${price * q}g</span><button data-b="${id}" data-q="${q}" ${gold >= price * q ? '' : 'disabled'}>Buy</button></div>`; }).join('') +
+      `<h4 style="margin:10px 0 4px">Sell</h4>` + (me.inv.map((s, i) => (s.id === 'gold' ? '' : `<div class="list-row">${this.iconHtml(s.id)}<span class="nm">${esc(itemName(s))}${s.q > 1 ? ' ×' + s.q : ''}</span><span class="gold">${sellPrice(s.id)}g</span><button data-s="${i}">Sell</button></div>`)).join('') || '<p class="subtle">Nothing to sell.</p>');
     $$('button[data-b]', body).forEach((b) => (b.onclick = () => this.send({ type: 'buy', npc: this.shop, id: b.dataset.b, q: +b.dataset.q })));
     $$('button[data-s]', body).forEach((b) => (b.onclick = () => this.send({ type: 'sell', npc: this.shop, ref: +b.dataset.s })));
   }
@@ -539,17 +558,35 @@ export class UI {
   itemTip(s) {
     const d = ITEMS[s.id];
     if (!d) return '';
-    const L = [`<h4 style="color:${d.c}">${esc(itemName(s))}${s.q > 1 ? ' ×' + s.q : ''}</h4>`];
-    if (d.weapon) { const w = d.weapon; L.push(`Weapon: ${w.dmg[0]}-${w.dmg[1]} ${w.type}${w.el ? ' +' + w.el : ''}, range ${w.range}, ${w.ap} AP${w.twoHanded ? ', two-handed' : ''}. Scales with ${w.stat}.`); }
-    if (d.armor) L.push(`Armor +${d.armor} (${d.slot})`);
-    if (s.d?.coat) L.push(`<span style="color:${COAT[s.d.coat].c}">Coated: ${s.d.coat}${s.d.ch ? ` (${s.d.ch} hits)` : ''}</span>`);
-    if (d.use) L.push(`Use: ${d.use.heal ? `heal ${d.use.heal[0]}-${d.use.heal[1]}` : ''}${d.use.cure ? ` cures ${d.use.cure.join(', ')}` : ''}${d.use.status ? ` ${STATUS[d.use.status[0]].n} for ${d.use.status[1]} rounds` : ''}`);
-    if (d.light) L.push(`<span style="color:#ffe08a">Light source when held in the off-hand (bright ${d.light[0]}, dim ${d.light[1]})</span>`);
-    if (d.throw) { const t = d.throw; L.push(`Throw: ${[t.liquid && t.liquid + ' surface', t.el && t.el, t.dmg && `${t.dmg[0]}-${t.dmg[1]} ${t.type}`, t.heal && 'heals'].filter(Boolean).join(', ')}${t.r ? ` (radius ${t.r})` : ''}`); }
-    if (d.coat) L.push(`Coating: combine with a weapon or arrows (${d.coat}).`);
-    if (d.tools.length) L.push(`Tool: ${d.tools.map(toolName).join(', ')}`);
-    if (d.d) L.push(`<span class="d">${esc(d.d)}</span>`);
-    return L.join('<br>');
+    const r = rarityOf(s), R = RARITY[r];
+    const row = (ic, k, v) => `<div class="tr"><span class="ti">${ic}</span><span class="tk">${k}</span><span class="tv">${v}</span></div>`;
+    const L = [`<div class="it it-${r}"><h4 style="color:${R.c}">${esc(itemName(s))}${s.q > 1 ? ' <small>×' + s.q + '</small>' : ''}</h4>`,
+      `<div class="rar" style="color:${R.c}">${r !== 'common' ? '<i class="star"></i>' : ''}${R.n}</div>`,
+      `<div class="kind">${itemKind(d)}</div>`];
+    const rows = [];
+    if (d.weapon) {
+      const w = d.weapon;
+      rows.push(row('⚔', 'Damage', `${w.dmg[0]}–${w.dmg[1]} ${w.type}${w.el && w.el !== w.type ? ' +' + w.el : ''}`));
+      rows.push(row('➹', 'Range', w.range), row('◆', 'Cost', `${w.ap} AP`), row('✦', 'Scales', w.stat));
+      if (w.crit) rows.push(row('✶', 'Crit', `+${w.crit}%`));
+    }
+    if (d.armor) rows.push(row('⛨', 'Armor', `+${d.armor}`));
+    if (d.use) {
+      if (d.use.heal) rows.push(row('✚', 'Heals', `${d.use.heal[0]}–${d.use.heal[1]}`));
+      if (d.use.cure) rows.push(row('❖', 'Cures', d.use.cure.join(', ')));
+      if (d.use.status) rows.push(row('✧', 'Grants', `${STATUS[d.use.status[0]].n}, ${d.use.status[1]} rounds`));
+    }
+    if (d.throw) { const t = d.throw; rows.push(row('➚', 'Throw', `${[t.liquid && t.liquid + ' surface', t.el && t.el, t.dmg && `${t.dmg[0]}–${t.dmg[1]} ${t.type}`, t.heal && 'heals'].filter(Boolean).join(', ')}${t.r ? ` (r${t.r})` : ''}`)); }
+    if (d.light) rows.push(row('☀', 'Light', `bright ${d.light[0]}, dim ${d.light[1]}`));
+    if (d.tools.length) rows.push(row('⚒', 'Tool', d.tools.map(toolName).join(', ')));
+    if (rows.length) L.push(`<div class="rows">${rows.join('')}</div>`);
+    if (s.d?.coat) {
+      const c = COAT[s.d.coat];
+      L.push(`<div class="sec">Coating</div><div class="ench"><span class="eg" style="color:${c.c}">◈</span><span style="color:${c.c}">${c.n}: ${s.d.coat} on hit${s.d.ch ? `<br><span class="d">${s.d.ch} hits left</span>` : ''}</span></div>`);
+    }
+    if (d.coat) L.push(`<div class="sec">Coating</div><div class="d">Combine with a weapon or arrows (${d.coat}).</div>`);
+    if (d.d) L.push(`<div class="sec"></div><div class="d">${esc(d.d)}</div>`);
+    return L.join('') + '</div>';
   }
   creatureTip(e) {
     const L = [`<h4>${esc(e.name)}</h4>`];
@@ -588,17 +625,32 @@ export class UI {
     document.addEventListener('mousemove', (ev) => {
       if (this.touchMode) return; // taps fire emulated mouse events; touch gets info via taps and long-press instead
       const el = ev.target.closest?.('[data-tip]');
-      if (el && el.dataset.tip) this.showTip(el.dataset.tip, ev.clientX, ev.clientY);
+      if (el && el.dataset.tip) this.showTip(el.dataset.tip, ev.clientX, ev.clientY, el.classList.contains('slot') ? el : null);
       else if (ev.target !== this.r.cv) tip.classList.add('hidden');
     });
   }
-  showTip(html, x, y) {
+  showTip(html, x, y, anchor = null) {
     const tip = $('#tip');
-    tip.innerHTML = html;
-    tip.classList.remove('hidden');
+    if (tip.dataset.html !== html) { tip.innerHTML = html + '<i class="arrow"></i>'; tip.dataset.html = html; }
+    tip.classList.remove('hidden', 'side-l', 'side-r');
     const w = tip.offsetWidth, h = tip.offsetHeight;
-    tip.style.left = Math.min(innerWidth - w - 8, x + 16) + 'px';
-    tip.style.top = Math.min(innerHeight - h - 8, y + 16) + 'px';
+    if (anchor) {
+      // pin beside the slot with the pointer arrow, preferring the left (like a backpack tooltip)
+      const r = anchor.getBoundingClientRect(), gap = 14;
+      const left = r.left - w - gap >= 4;
+      const right = r.right + w + gap <= innerWidth - 4;
+      if (left || right) {
+        const lx = left ? r.left - w - gap : r.right + gap;
+        const ty = Math.max(4, Math.min(innerHeight - h - 4, r.top + r.height / 2 - 40));
+        tip.classList.add(left ? 'side-l' : 'side-r');
+        tip.style.left = lx + 'px';
+        tip.style.top = ty + 'px';
+        tip.style.setProperty('--ay', Math.max(10, Math.min(h - 28, r.top + r.height / 2 - ty - 9)) + 'px');
+        return;
+      }
+    }
+    tip.style.left = Math.max(4, Math.min(innerWidth - w - 8, x + 16)) + 'px';
+    tip.style.top = Math.max(4, Math.min(innerHeight - h - 8, y + 16)) + 'px';
   }
 
   // ================================================================ context menu

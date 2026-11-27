@@ -2,7 +2,7 @@
 
 A **3D** browser prototype of an open-world RPG with **turn-based action-point combat**, a deep **crafting & item interaction** system and **peer-to-peer co-op for up to 4 players** (one player hosts — no dedicated server).
 
-No build step and no art assets: plain ES modules + [Three.js](https://threejs.org) (r160, vendored in `vendor/`, MIT). The world is a tactical diorama — tiled terrain with height, low-poly procedural models, dynamic shadows, fire light, rotatable camera.
+No build step and almost no art assets (just a few 9-slice UI sprites in `img/ui/`): plain ES modules + [Three.js](https://threejs.org) (r160, vendored in `vendor/`, MIT). The world is a tactical diorama — tiled terrain with height, low-poly procedural models, dynamic shadows, fire light, rotatable camera.
 
 ## Run it
 

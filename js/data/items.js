@@ -105,3 +105,30 @@ export const SHOP = [
   ['arrows', 1], ['torch', 3], ['nightsight', 18], ['tinderbox', 6], ['healing_potion', 16], ['iron_ingot', 14], ['mortar', 10],
 ];
 export const sellPrice = (id) => Math.max(1, Math.floor((ITEMS[id]?.v || 0) / 2));
+
+// Rarity tiers drive the slot frame and tooltip header. Derived from value; an item can override with `r`.
+export const RARITY = {
+  common: { n: 'Common', c: '#e9dcc4' },
+  rare: { n: 'Rare', c: '#7fb6ff' },
+  epic: { n: 'Epic', c: '#c99bff' },
+  legendary: { n: 'Legendary', c: '#ffb347' },
+};
+export function rarityOf(s) {
+  const d = ITEMS[s?.id];
+  if (!d) return 'common';
+  let r = d.r || (d.v >= 30 ? 'legendary' : d.v >= 20 ? 'epic' : d.v >= 12 ? 'rare' : 'common');
+  if (s.d?.coat && r === 'common' && (d.weapon || d.ammo)) r = 'rare'; // a coated blade is a step up
+  return r;
+}
+export function itemKind(d) {
+  if (d.weapon) return `${d.weapon.twoHanded ? 'Two-handed' : 'One-handed'} ${d.weapon.ranged ? 'ranged weapon' : 'weapon'}`;
+  if (d.slot === 'offhand') return d.armor ? 'Shield' : 'Off-hand';
+  if (d.slot === 'armor') return 'Body armor';
+  if (d.ammo) return 'Ammunition';
+  if (d.coat && !d.liquid) return 'Coating';
+  if (d.throw && !d.use) return 'Throwable';
+  if (d.use) return 'Consumable';
+  if (d.herb) return 'Herb';
+  if (d.tools.length) return 'Tool';
+  return 'Material';
+}
