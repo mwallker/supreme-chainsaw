@@ -33,7 +33,7 @@ small { color: var(--dim); }
 .title-card .sub { color: var(--dim); margin: 4px 0 20px; font-style: italic; }
 .menu { display: flex; flex-direction: column; gap: 10px; align-items: stretch; margin-bottom: 16px; }
 .join-row { display: flex; gap: 8px; }
-.join-row input { flex: 1; text-transform: uppercase; font-size: 16px; letter-spacing: 3px; text-align: center; }
+.join-row input { flex: 1; min-width: 0; text-transform: uppercase; font-size: 16px; letter-spacing: 3px; text-align: center; }
 .netmode { text-align: left; border: 1px solid var(--edge); border-radius: 8px; padding: 8px 12px; }
 .netmode label { display: block; margin: 6px 0; cursor: pointer; }
 .netmode small { display: block; margin-left: 22px; }
@@ -302,6 +302,85 @@ small { color: var(--dim); }
 #objective .done { color: var(--dim); text-decoration: line-through; }
 #objective .open { color: #7fd8ff; }
 
+/* ---------- skin: every frame and button drawn from the img/ui sprites ---------- */
+/* buttons: dark slot sprite; primary (.big) = legendary slot; hover = hover slot */
+button {
+  background: none; border: 8px solid transparent; border-image: url(../img/ui/slot_common.png) 12 fill / 8px stretch;
+  border-radius: 10px; padding: 0 6px; color: #f3e6cf; text-shadow: 0 1px 1px rgba(0,0,0,0.6);
+}
+button:hover:not(:disabled) { background: none; border-color: transparent; border-image-source: url(../img/ui/slot_hover.png); }
+button.big { border-image-source: url(../img/ui/slot_legendary.png); padding: 2px 12px; filter: drop-shadow(0 0 6px rgba(255,170,50,0.35)); }
+button.big:hover:not(:disabled) { border-image-source: url(../img/ui/slot_legendary.png); filter: brightness(1.12) drop-shadow(0 0 8px rgba(255,170,50,0.6)); }
+button:disabled { opacity: 0.5; filter: grayscale(0.4); }
+.panel header .x { border: 0; border-image: none; }
+.panel header .x:hover:not(:disabled) { border-image: none; background: url(../img/ui/close.png) center / 100% 100% no-repeat; }
+
+/* full screens: parchment cards over a warm backdrop */
+.screen { background: radial-gradient(ellipse at 50% 25%, #6b4a2c 0%, #2b1e14 55%, #0f0b08 100%); }
+.card {
+  --text: #3d2c1d; --dim: #7d6850; --good: #2e7d32; --bad: #b0382a; --gold: #8f6408; --accent: #b4601c;
+  color: var(--text); background: none; border: 14px solid transparent; border-image: url(../img/ui/panel.png) 14 fill / 14px stretch;
+  border-radius: 0; box-shadow: none; padding: 14px 20px; filter: drop-shadow(0 18px 40px rgba(0,0,0,0.6));
+}
+.card small, .card .hint, .card .sub { color: var(--dim); }
+.card h2 { color: #4a3626; text-align: center; font-size: 26px; font-weight: 600; }
+.card input, .card textarea { background: #fbf4e8; color: #3d2c1d; border: 1px solid #b89c71; border-radius: 8px; }
+.card input:focus, .card textarea:focus { outline: 2px solid #e8962c; outline-offset: 0; }
+.title-card h1 { background: linear-gradient(#f0a53a, #b4410f); -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 2px 0 rgba(255,240,215,0.9)) drop-shadow(0 4px 8px rgba(120,50,10,0.35)); }
+.netmode { border: 12px solid transparent; border-image: url(../img/ui/panel_header.png) 12 fill / 12px stretch; border-radius: 0; padding: 0 6px 2px; }
+.netmode legend { font: 600 14px Georgia, serif; color: #5a4230; padding: 0 4px; float: left; width: 100%; margin-bottom: 2px; }
+.netmode label { clear: both; }
+.netmode input { accent-color: #b4601c; }
+#cc-classes .cls { border: 12px solid transparent; border-image: url(../img/ui/panel_header.png) 12 fill / 12px stretch; border-radius: 14px; padding: 0 2px 2px; background: none; transition: transform 0.08s, box-shadow 0.12s; }
+#cc-classes .cls:hover { transform: translateY(-2px); }
+#cc-classes .cls.sel { border-image-source: url(../img/ui/panel.png); box-shadow: 0 0 0 2px #e8962c, 0 0 18px rgba(232,150,44,0.55); }
+.cls .glyph { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; font-size: 24px; border-radius: 9px; background: url(../img/ui/slot_common.png) 0 0 / 100% 100%; text-shadow: 0 1px 2px #000; }
+.cls.sel .glyph { background-image: url(../img/ui/slot_legendary.png); }
+.cls h3 { color: #3d2c1d; }
+.cls p { color: var(--dim); }
+.cls .sk { color: #a2521a; }
+.swatch { border: 3px solid #fbf4e8; box-shadow: 0 0 0 1px #b89c71; }
+.swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px #e8962c, 0 0 10px rgba(232,150,44,0.7); }
+.attr-row .av { font: 600 18px Georgia, serif; }
+.attr-row button { padding: 0 4px; min-width: 30px; }
+.card .row.end button:not(.big) { padding: 2px 12px; }
+#cc-summary b { color: #3d2c1d; }
+
+/* HUD frames: dark tooltip sprite */
+.pf, #turnbar, #netinfo, #objective, #apbar, #actions, .toast, .targeting-hint {
+  background: none; border: 10px solid transparent; border-image: url(../img/ui/tooltip_body.png) 12 fill / 10px stretch; border-radius: 12px;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45));
+}
+.pf { padding: 0 4px 0 0; }
+.pf.me { border-color: transparent; }
+.pf.active, .pf.me.active { border-color: transparent; box-shadow: 0 0 0 2px #f2c94c, 0 0 14px rgba(242,201,76,0.6); }
+.pf.drop { border-color: transparent; box-shadow: 0 0 0 2px #6ee07a, 0 0 12px rgba(110,224,122,0.6); }
+.pf .por { border: 2px solid #c9a873; box-shadow: 0 0 0 2px #33281f, inset 0 -6px 10px rgba(0,0,0,0.25); }
+.bar { border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,115,0.35); }
+#turnbar { padding: 0 2px; }
+#turnbar .rnd { font: 600 13px Georgia, serif; }
+.tchip { border: 2px solid #c9a873; box-shadow: 0 0 0 2px #33281f; }
+.tchip.act { border-color: #f2c94c; box-shadow: 0 0 0 2px #33281f, 0 0 12px #f2c94c; }
+#netinfo { padding: 0 2px; }
+#objective { padding: 0 2px; }
+#objective b { font-size: 13px; }
+#minimap { border: 3px solid #a3885f; border-radius: 12px; box-shadow: 0 0 0 2px #33281f, 0 4px 10px rgba(0,0,0,0.45); }
+#apbar { padding: 0 6px; }
+#actions { padding: 0; }
+.act, #menubar button { border: 0; border-image: none; border-radius: 10px; background: url(../img/ui/slot_common.png) 0 0 / 100% 100% no-repeat; text-shadow: 0 1px 2px #000; }
+.act:hover:not(:disabled), #menubar button:hover:not(:disabled) { border-image: none; background: url(../img/ui/slot_hover.png) 0 0 / 100% 100% no-repeat; }
+.act.sel, #menubar button.on, #menubar button.on:hover:not(:disabled) { border-image: none; background-image: url(../img/ui/slot_legendary.png); box-shadow: 0 0 12px rgba(255,170,50,0.6); }
+.act.end { background-image: url(../img/ui/slot_legendary.png); color: #fff3dc; }
+.act.end:hover:not(:disabled) { background: url(../img/ui/slot_legendary.png) 0 0 / 100% 100% no-repeat; filter: brightness(1.15); }
+.act .cd { border-radius: 10px; }
+#menubar button { filter: drop-shadow(0 3px 6px rgba(0,0,0,0.45)); }
+#log { background: rgba(43,32,24,0.82); border: 2px solid #a3885f; border-radius: 12px; box-shadow: 0 0 0 1px #1d1510; }
+#chat { background: rgba(43,32,24,0.82); border: 2px solid #a3885f; border-radius: 10px; }
+.toast { padding: 0 6px; }
+.toast:not(.info) { color: #ffc2b0; }
+.toast.info { background: none; border-color: transparent; color: #cdeec4; }
+.targeting-hint { padding: 0 6px; color: #ffe3a3; }
+
 /* ---------- touch & small screens ---------- */
 html, body { -webkit-tap-highlight-color: transparent; }
 #view { touch-action: none; }
@@ -349,7 +428,10 @@ body.touch .slot:hover { transform: none; filter: none; }
   .act.end { width: 62px; font-size: 12px; }
   #apbar { font-size: 11px; padding: 3px 8px; gap: 5px; flex-wrap: wrap; justify-content: center; }
   #apbar .pip { width: 12px; height: 12px; }
-  #logbox { left: 6px; right: 56px; width: auto; bottom: 124px; gap: 3px; }
+  #logbox { left: 6px; right: 56px; width: auto; bottom: 146px; gap: 3px; }
+  .pf, #turnbar, #netinfo, #objective, #apbar, #actions, .toast, .targeting-hint { border-width: 8px; border-image-width: 8px; }
+  #apbar { padding: 0 4px; }
+  .card { padding: 8px 10px; }
   #log { max-height: 50px; font-size: 11px; padding: 3px 6px; }
   #chat { font-size: 16px; padding: 3px 6px; }
   .panel { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: 100% !important; max-height: 72vh; border-width: 12px; border-image-width: 12px; }
